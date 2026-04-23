@@ -1,0 +1,35 @@
+{
+  "name": "miksir-app",
+  "version": "1.0.0",
+  "description": "Miksir - Concrete Mix Design Application (Full Stack)",
+  "private": true,
+  "scripts": {
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "docker:build": "docker-compose up -d --build",
+    "docker:restart": "docker-compose restart",
+    "backend:install": "cd backend && npm install",
+    "backend:start": "cd backend && npm start",
+    "backend:dev": "cd backend && npm run dev",
+    "frontend:serve": "cd frontend && python3 -m http.server 8080",
+    "frontend:serve:node": "cd frontend && npx http-server -p 8080",
+    "dev": "npm run backend:start & npm run frontend:serve",
+    "setup": "npm run backend:install && cp .env.example .env && cp backend/.env.example backend/.env",
+    "db:init": "psql -f backend/schema.sql",
+    "db:seed": "node backend/src/data/seed.js"
+  },
+  "keywords": [
+    "concrete",
+    "mix-design",
+    "construction",
+    "engineering",
+    "ai"
+  ],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  }
+}
