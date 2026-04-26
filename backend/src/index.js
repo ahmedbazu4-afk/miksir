@@ -24,14 +24,21 @@ const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
   .map((o) => o.trim());
 
 app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, Postman)
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    callback(new Error(`CORS policy: origin ${origin} not allowed`));
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
+      callback(null, true);
+    } else {
+      // Instead of throwing an Error object, just pass null/false
+      callback(null, false); 
+    }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200 // Some legacy browsers (IE11) choke on 204
 }));
 
 // ─── Body parsing ─────────────────────────────────────────────────
