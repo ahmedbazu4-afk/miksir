@@ -22,13 +22,13 @@ async function getAIResponse(messages) {
 
     logger.info('🤖 Calling Claude API', {
       messageCount: formattedMessages.length,
-      model: 'claude-3-5-sonnet-20241022'
+      model: 'claude-haiku-4-5-20251001'
     });
 
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
       {
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
         system: `You are Miksir, an AI assistant for concrete mix design. You help civil engineers design concrete mixes that comply with ACI 211, EN 206, BS 8500, and TS 500 standards.
 
