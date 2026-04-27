@@ -12,21 +12,33 @@ router.use(authenticate);
 
 // ─── Helper: verify chat ownership ───────────────────────────────
 const getOwnedChat = async (chatId, userId) => {
-  const { data, error } = await supabase
-    .from('chats')
-    .select('*')
-    .eq('id', chatId)
-    .eq('user_id', userId)
-    .is('deleted_at', null)
-    .single();
-  if (error || !data) return null;
-  return data;
+  try {
+    const { data, error } = await supabase
+      .from('chats')
+      .select('*')
+      .eq('id', chatId)
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .single();
+    
+    if (error) {
+      logger.error('getOwnedChat error', { error: error.message, chatId, userId });
+      return null;
+    }
+    
+    return data;
+  } catch (err) {
+    logger.error('getOwnedChat exception', { error: err.message });
+    return null;
+  }
 };
 
 // ─── POST /api/chats ─────────────────────────────────────────────
 router.post('/', validate(createChatSchema), async (req, res) => {
   try {
     const title = req.body.title || `Concrete Design ${new Date().toLocaleDateString('en-GB')}`;
+
+    logger.info('Creating chat', { userId: req.user.id, title });
 
     const { data, error } = await supabase
       .from('chats')
@@ -35,24 +47,68 @@ router.post('/', validate(createChatSchema), async (req, res) => {
       .single();
 
     if (error) {
-      logger.error('Create chat error', { error: error.message });
-      return serverError(res);
+      logger.error('Create chat Supabase error', { 
+        error: error.message, 
+        code: error.code,
+        userId: req.user.id 
+      });
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'DB_ERROR',
+          message: 'Failed to create chat',
+          details: error.message
+        }
+      });
     }
 
     return created(res, { ...data, messages: [] }, 'Chat created');
   } catch (err) {
-    logger.error('Create chat handler error', { error: err.message });
-    return serverError(res);
+    logger.error('Create chat handler error', { 
+      error: err.message,
+      stack: err.stack,
+      userId: req.user.id 
+    });
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: err.message
+      }
+    });
   }
 });
 
 // ─── GET /api/chats ──────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
+    logger.info('GET /api/chats', { userId: req.user?.id });
+
+    // Verify auth succeeded
+    if (!req.user || !req.user.id) {
+      logger.error('Auth middleware failed - no user', { headers: req.headers.authorization ? 'present' : 'missing' });
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'NOT_AUTHENTICATED',
+          message: 'User not authenticated'
+        }
+      });
+    }
+
     const limit  = Math.min(parseInt(req.query.limit) || 20, 100);
     const offset = parseInt(req.query.offset) || 0;
     const sort   = ['created_at', 'updated_at', 'title'].includes(req.query.sort) ? req.query.sort : 'created_at';
     const order  = req.query.order === 'asc' ? true : false;
+
+    logger.info('Query params', { limit, offset, sort, order });
+
+    // Test Supabase connection
+    logger.info('Supabase connection check', {
+      hasUrl: !!process.env.SUPABASE_URL,
+      hasKey: !!process.env.SUPABASE_ANON_KEY,
+      urlLength: process.env.SUPABASE_URL?.length || 0
+    });
 
     const { data, error, count } = await supabase
       .from('chats')
@@ -62,20 +118,47 @@ router.get('/', async (req, res) => {
       .order(sort, { ascending: order })
       .range(offset, offset + limit - 1);
 
+    logger.info('Supabase query result', {
+      hasError: !!error,
+      errorMessage: error?.message,
+      errorCode: error?.code,
+      dataCount: data?.length || 0,
+      total: count
+    });
+
     if (error) {
-      logger.error('Get chats error', { error: error.message });
-      return serverError(res);
+      logger.error('Get chats Supabase error', { 
+        error: error.message,
+        code: error.code,
+        details: JSON.stringify(error)
+      });
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'DB_ERROR',
+          message: error.message,
+          details: error.code
+        }
+      });
     }
 
     // Fetch message counts
     const chatIds = (data || []).map((c) => c.id);
     let messageCounts = {};
+    
     if (chatIds.length) {
-      const { data: msgs } = await supabase
+      logger.info('Fetching message counts', { chatCount: chatIds.length });
+      
+      const { data: msgs, error: msgErr } = await supabase
         .from('messages')
         .select('chat_id')
         .in('chat_id', chatIds)
         .is('deleted_at', null);
+      
+      if (msgErr) {
+        logger.error('Message count query error', { error: msgErr.message });
+      }
+      
       (msgs || []).forEach((m) => {
         messageCounts[m.chat_id] = (messageCounts[m.chat_id] || 0) + 1;
       });
@@ -83,18 +166,35 @@ router.get('/', async (req, res) => {
 
     const chats = (data || []).map((c) => ({ ...c, message_count: messageCounts[c.id] || 0 }));
 
+    logger.info('GET /api/chats - SUCCESS', { chatCount: chats.length });
     return success(res, { chats, pagination: { total: count || 0, limit, offset } });
+    
   } catch (err) {
-    logger.error('Get chats handler error', { error: err.message });
-    return serverError(res);
+    logger.error('Get chats handler error', { 
+      error: err.message,
+      stack: err.stack,
+      userId: req.user?.id
+    });
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: err.message
+      }
+    });
   }
 });
 
 // ─── GET /api/chats/:chat_id ─────────────────────────────────────
 router.get('/:chat_id', async (req, res) => {
   try {
+    logger.info('GET /api/chats/:chat_id', { chatId: req.params.chat_id, userId: req.user.id });
+    
     const chat = await getOwnedChat(req.params.chat_id, req.user.id);
-    if (!chat) return notFound(res, 'Chat');
+    if (!chat) {
+      logger.warn('Chat not found or access denied', { chatId: req.params.chat_id, userId: req.user.id });
+      return notFound(res, 'Chat');
+    }
 
     const { data: messages, error: msgErr } = await supabase
       .from('messages')
@@ -105,7 +205,13 @@ router.get('/:chat_id', async (req, res) => {
 
     if (msgErr) {
       logger.error('Get messages error', { error: msgErr.message });
-      return serverError(res);
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'DB_ERROR',
+          message: msgErr.message
+        }
+      });
     }
 
     // Attach latest design if present
@@ -118,10 +224,18 @@ router.get('/:chat_id', async (req, res) => {
       .limit(1)
       .single();
 
+    logger.info('GET /api/chats/:chat_id - SUCCESS', { chatId: chat.id, messageCount: messages?.length || 0 });
     return success(res, { ...chat, messages: messages || [], design_output: design || null });
+    
   } catch (err) {
-    logger.error('Get chat handler error', { error: err.message });
-    return serverError(res);
+    logger.error('Get chat handler error', { error: err.message, stack: err.stack });
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: err.message
+      }
+    });
   }
 });
 
@@ -138,11 +252,27 @@ router.put('/:chat_id', validate(updateChatSchema), async (req, res) => {
       .select()
       .single();
 
-    if (error) return serverError(res);
+    if (error) {
+      logger.error('Update chat error', { error: error.message });
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'DB_ERROR',
+          message: error.message
+        }
+      });
+    }
+    
     return success(res, data, 'Chat updated');
   } catch (err) {
     logger.error('Update chat handler error', { error: err.message });
-    return serverError(res);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: err.message
+      }
+    });
   }
 });
 
@@ -157,7 +287,13 @@ router.delete('/:chat_id', async (req, res) => {
     return success(res, {}, 'Chat deleted');
   } catch (err) {
     logger.error('Delete chat handler error', { error: err.message });
-    return serverError(res);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: err.message
+      }
+    });
   }
 });
 
@@ -180,7 +316,13 @@ router.post('/:chat_id/messages', validate(postMessageSchema), async (req, res) 
 
     if (error) {
       logger.error('Post message error', { error: error.message });
-      return serverError(res);
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'DB_ERROR',
+          message: error.message
+        }
+      });
     }
 
     // Update chat timestamp
@@ -189,7 +331,13 @@ router.post('/:chat_id/messages', validate(postMessageSchema), async (req, res) 
     return created(res, { ...data, status: 'delivered' });
   } catch (err) {
     logger.error('Post message handler error', { error: err.message });
-    return serverError(res);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: err.message
+      }
+    });
   }
 });
 
@@ -223,7 +371,13 @@ router.post('/:chat_id/ai-response', async (req, res) => {
 
     if (saveErr) {
       logger.error('Save AI message error', { error: saveErr.message });
-      return serverError(res);
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'DB_ERROR',
+          message: saveErr.message
+        }
+      });
     }
 
     await supabase.from('chats').update({ updated_at: new Date().toISOString() }).eq('id', chat.id);
@@ -234,7 +388,13 @@ router.post('/:chat_id/ai-response', async (req, res) => {
       return res.status(503).json({ success: false, error: { code: 'AI_UNAVAILABLE', message: err.message } });
     }
     logger.error('AI response handler error', { error: err.message });
-    return serverError(res);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: err.message
+      }
+    });
   }
 });
 
@@ -264,7 +424,15 @@ router.post('/:chat_id/ai-response-stream', async (req, res) => {
     }
   } catch (err) {
     logger.error('Streaming handler error', { error: err.message });
-    if (!res.headersSent) return serverError(res);
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'SERVER_ERROR',
+          message: err.message
+        }
+      });
+    }
   }
 });
 
