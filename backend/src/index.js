@@ -23,7 +23,7 @@ const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
   .split(',')
   .map((o) => o.trim());
 
-app.use(cors({
+const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
@@ -31,15 +31,22 @@ app.use(cors({
     if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
       callback(null, true);
     } else {
-      // Instead of throwing an Error object, just pass null/false
-      callback(null, false); 
+      callback(new Error('CORS not allowed'));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  optionsSuccessStatus: 200 // Some legacy browsers (IE11) choke on 204
-}));
+  exposedHeaders: ['Content-Length', 'X-JSON-Response-Size'],
+  optionsSuccessStatus: 200,
+  maxAge: 86400 // Cache preflight for 24 hours
+};
+
+// Apply CORS globally
+app.use(cors(corsOptions));
+
+// Explicit preflight handler for all routes
+app.options('*', cors(corsOptions));
 
 // ─── Body parsing ─────────────────────────────────────────────────
 app.use(express.json({ limit: '1mb' }));

@@ -349,7 +349,9 @@ if (window.supabase) {
       // Only navigate if we aren't already on the dashboard to avoid loops
       if (document.querySelector('.page.active').id !== 'page-dashboard') {
         navigate('dashboard');
-        loadUserChats();
+        setTimeout(() => {
+          loadUserChats();
+        }, 1000);
       }
     } else {
       // If we're on a protected page but have no session, go home
@@ -980,8 +982,11 @@ async function apiCall(endpoint, options = {}) {
   const { data: { session } } = await supabaseClient.auth.getSession();
   const token = session?.access_token;
 
+  // If there's no token, we don't even try the fetch
   if (!token) {
-    showToast('Not authenticated', 'error');
+    // Only show this if the user is actually trying to DO something 
+    // rather than just loading the page
+    console.warn('API Call blocked: Not authenticated');
     return null;
   }
 
