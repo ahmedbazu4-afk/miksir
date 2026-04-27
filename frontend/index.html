@@ -981,34 +981,50 @@ if (window.supabase) {
 async function apiCall(endpoint, options = {}) {
   const { data: { session } } = await supabaseClient.auth.getSession();
   const token = session?.access_token;
-
-  // If there's no token, we don't even try the fetch
+ 
   if (!token) {
-    // Only show this if the user is actually trying to DO something 
-    // rather than just loading the page
     console.warn('API Call blocked: Not authenticated');
     return null;
   }
-
+ 
   const url = `${API_BASE_URL}${endpoint}`;
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`
   };
-
+ 
+  console.log('🔵 API Request:', {
+    method: options.method || 'GET',
+    endpoint: endpoint,
+    body: options.body ? JSON.parse(options.body) : null
+  });
+ 
   try {
     const response = await fetch(url, {
       ...options,
       headers: { ...headers, ...options.headers }
     });
-
+ 
+    console.log('📊 API Response status:', response.status);
+ 
     if (!response.ok) {
+      let errorBody = null;
+      try {
+        errorBody = await response.json();
+      } catch (e) {
+        errorBody = await response.text();
+      }
+      
+      console.error('❌ API Error:', errorBody);
       throw new Error(`API error: ${response.status}`);
     }
-
-    return await response.json();
+ 
+    const data = await response.json();
+    console.log('✅ API Success');
+    
+    return data;
   } catch (err) {
-    console.error('API call failed:', err);
+    console.error('❌ API call failed:', err);
     showToast(err.message, 'error');
     return null;
   }
@@ -1167,43 +1183,101 @@ async function loadUserChats() {
 }
 
 async function sendMessage() {
+  console.log('📨 sendMessage() called');
+  
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
-
-  if (!text || isThinking) return;
-
+ 
+  console.log('📝 Message text:', text);
+  console.log('🔄 Current chat ID:', window.currentChatId);
+ 
+  if (!text || isThinking) {
+    console.warn('⚠️ Message blocked: empty text or already thinking');
+    return;
+  }
+ 
+  // Create new chat if we don't have one
   if (!window.currentChatId) {
-    const newChat = await apiCall('/api/chats', {
+    console.log('📌 No chat ID, creating new chat...');
+    
+    const newChatData = await apiCall('/api/chats', {
       method: 'POST',
       body: JSON.stringify({ title: text.substring(0, 50) })
     });
-    if (!newChat) return;
-    window.currentChatId = newChat.id;
+    
+    if (!newChatData || !newChatData.data) {
+      console.error('❌ Failed to create chat:', newChatData);
+      showToast('Failed to create chat', 'error');
+      return;
+    }
+    
+    window.currentChatId = newChatData.data.id;
+    console.log('✅ Created new chat:', window.currentChatId);
     loadUserChats();
   }
-
+ 
+  // Hide welcome message
   welcomeEl.style.display = 'none';
+  
+  // Show user message
   appendMsg('user', text);
   input.value = '';
   input.style.height = 'auto';
   updateSendBtn();
+ 
+  // Show thinking animation
   showThinking();
-
+ 
   try {
-    const response = await apiCall('/api/chats/' + window.currentChatId + '/message', {
+    // Post user message to backend
+    // NOTE: Backend requires both 'content' and 'role' fields
+    const requestBody = {
+      content: text,
+      role: 'user'
+    };
+    
+    console.log('📨 Posting message:', requestBody);
+    
+    const messageResponse = await apiCall(`/api/chats/${window.currentChatId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content: text })
+      body: JSON.stringify(requestBody)
     });
-
-    if (response?.message) {
+ 
+    console.log('📩 Message response:', messageResponse);
+ 
+    if (!messageResponse) {
       hideThinking();
-      appendMsg('ai', response.message);
+      console.error('❌ No message response received');
+      showToast('Failed to send message', 'error');
+      return;
+    }
+ 
+    // Get AI response
+    console.log('🤖 Fetching AI response...');
+    
+    const aiResponse = await apiCall(`/api/chats/${window.currentChatId}/ai-response`, {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+ 
+    console.log('🤖 AI response:', aiResponse);
+ 
+    hideThinking();
+ 
+    if (aiResponse && aiResponse.data && aiResponse.data.content) {
+      console.log('✅ Displaying AI message');
+      appendMsg('ai', aiResponse.data.content);
+    } else {
+      console.error('❌ Invalid AI response format:', aiResponse);
+      showToast('Failed to generate response', 'error');
     }
   } catch (err) {
     hideThinking();
-    showToast('Failed to get response', 'error');
+    console.error('❌ Send message error:', err);
+    showToast('Error: ' + err.message, 'error');
   }
 }
+
 
 function appendMsg(role, text) {
   const area = document.getElementById('chat-messages');
@@ -1230,13 +1304,8 @@ function showThinking() {
   thinking.innerHTML = `<div class="mixer"><div class="mixer-block"></div><div class="mixer-block"></div><div class="mixer-block"></div><div class="mixer-block"></div><div class="mixer-block"></div></div><span class="thinking-text">Calculating mix design…</span>`;
   area.appendChild(thinking);
   area.scrollTop = area.scrollHeight;
-
-  setTimeout(() => {
-    const t = document.getElementById('thinking');
-    if (t) t.remove();
-    isThinking = false;
-  }, 2200);
 }
+
 
 function hideThinking() {
   const t = document.getElementById('thinking');
