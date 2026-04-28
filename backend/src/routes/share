@@ -1,0 +1,89 @@
+const express = require('express');
+const router = express.Router();
+const { v4: uuidv4 } = require('uuid');
+const supabase = require('../utils/supabase');
+const { authenticate } = require('../middleware/auth');
+const { success, created, serverError, notFound } = require('../utils/response');
+const logger = require('../utils/logger');
+
+router.use(authenticate);
+
+/**
+ * Share a design via email
+ */
+router.post('/designs/:design_id/share', async (req, res) => {
+  try {
+    const { email, message } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_EMAIL', message: 'Email is required' }
+      });
+    }
+
+    // Verify ownership
+    const { data: design } = await supabase
+      .from('designs')
+      .select('id')
+      .eq('id', req.params.design_id)
+      .eq('user_id', req.user.id)
+      .single();
+
+    if (!design) return notFound(res, 'Design');
+
+    // Generate share token
+    const shareToken = uuidv4();
+
+    // Store share record
+    const { error: shareErr } = await supabase
+      .from('design_shares')
+      .insert({
+        id: uuidv4(),
+        design_id: req.params.design_id,
+        shared_by: req.user.id,
+        shared_with_email: email,
+        token: shareToken,
+        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      });
+
+    if (shareErr) {
+      logger.error('Share error', { error: shareErr.message });
+      return serverError(res);
+    }
+
+    // TODO: Send email using Resend/SendGrid
+    // await sendShareEmail(email, shareToken, message);
+
+    logger.info('Design shared', { designId: req.params.design_id, email });
+
+    return created(res, { shareToken, shareLink: `https://miksir.com/shared/${shareToken}` }, 'Design shared');
+  } catch (err) {
+    logger.error('Share handler error', { error: err.message });
+    return serverError(res);
+  }
+});
+
+/**
+ * View shared design (public, no auth needed)
+ */
+router.get('/shared/:token', async (req, res) => {
+  try {
+    const { data: share } = await supabase
+      .from('design_shares')
+      .select('design:designs(*), expires_at')
+      .eq('token', req.params.token)
+      .single();
+
+    if (!share || new Date() > new Date(share.expires_at)) {
+      return notFound(res, 'Design');
+    }
+
+    return res.json({ success: true, data: share.design });
+  } catch (err) {
+    logger.error('Shared design error', { error: err.message });
+    return serverError(res);
+  }
+});
+
+module.exports = router;

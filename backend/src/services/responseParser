@@ -1,0 +1,49 @@
+/**
+ * Extract mix design data from Claude's text response
+ */
+function parseMixDesignResponse(text) {
+  const design = {
+    format: 'markdown',
+    materials: {},
+    ratios: {},
+    clarifications: []
+  };
+
+  // Extract materials table (markdown format)
+  const tableRegex = /\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/g;
+  let match;
+  
+  while ((match = tableRegex.exec(text)) !== null) {
+    const label = match[1].trim().toLowerCase();
+    const value = match[2].trim();
+    
+    // Extract numeric value
+    const num = parseFloat(value);
+    
+    if (label.includes('cement')) design.materials.cement = num;
+    if (label.includes('water')) design.materials.water = num;
+    if (label.includes('fine aggregate') || label.includes('sand')) design.materials.fine_aggregate = num;
+    if (label.includes('coarse aggregate') || label.includes('gravel')) design.materials.coarse_aggregate = num;
+  }
+
+  // Extract W/C ratio
+  const wcMatch = text.match(/w\/c\s*(?:ratio)?[:\s]+([0-9.]+)/i);
+  if (wcMatch) design.ratios.w_c_ratio = parseFloat(wcMatch[1]);
+
+  // Extract air content
+  const airMatch = text.match(/air\s*(?:content|entrainment)[:\s]+([0-9.]+)%/i);
+  if (airMatch) design.ratios.air_content = parseFloat(airMatch[1]);
+
+  // Extract clarifications (questions asked)
+  const clarMatch = text.match(/(?:clarif|question)[\s\S]*?:\s*([\s\S]*?)(?=\n\n|$)/i);
+  if (clarMatch) {
+    design.clarifications = clarMatch[1]
+      .split('\n')
+      .filter(l => l.trim())
+      .map(l => l.replace(/^[\d.•\-]\s*/, '').trim());
+  }
+
+  return design;
+}
+
+module.exports = { parseMixDesignResponse };

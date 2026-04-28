@@ -42,7 +42,12 @@ router.post('/', validate(createChatSchema), async (req, res) => {
 
     const { data, error } = await supabase
       .from('chats')
-      .insert({ id: uuidv4(), user_id: req.user.id, title })
+      .insert({ 
+        id: uuidv4(), 
+        user_id: req.user.id, 
+        title,
+        code_standard: req.body.code_standard || 'EN206'
+      })
       .select()
       .single();
 
