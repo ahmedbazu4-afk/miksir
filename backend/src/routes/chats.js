@@ -371,21 +371,26 @@ router.post('/:chat_id/ai-response', async (req, res) => {
       req.body.code_standard || selectedCodeStandard  // ← ADD THIS
     );
 
-    // Parse the response
-    const parsedDesign = parseMixDesignResponse(content);  // ← ADD THIS
+    // Parse the response from Claude
+    const parsedDesign = parseMixDesignResponse(content);
 
+    // Save the AI's chat message
     const { data: aiMsg } = await supabase
       .from('messages')
       .insert({ id: uuidv4(), chat_id: chat.id, role: 'assistant', content })
       .select()
       .single();
 
-    // OPTIONAL: Save the parsed design
+    // ✨ THIS IS THE FIX: Create a variable to hold the new Design ID
+    let newDesignId = null; 
+
+    // Save the actual concrete mix design to the designs table
     if (Object.keys(parsedDesign.materials).length > 0) {
+      newDesignId = uuidv4(); // Generate the ID here
       await supabase
         .from('designs')
         .insert({
-          id: uuidv4(),
+          id: newDesignId, // Save it using this specific ID
           user_id: req.user.id,
           chat_id: chat.id,
           mix_design: parsedDesign.materials,
@@ -396,7 +401,8 @@ router.post('/:chat_id/ai-response', async (req, res) => {
 
     await supabase.from('chats').update({ updated_at: new Date().toISOString() }).eq('id', chat.id);
 
-    return created(res, { ...aiMsg, status: 'delivered', design: parsedDesign });
+    // ✨ Return the newDesignId to the frontend!
+    return created(res, { ...aiMsg, status: 'delivered', design: parsedDesign, design_id: newDesignId });
   } catch (err) {
     logger.error('AI response error', { error: err.message });
     return res.status(503).json({ success: false, error: { code: 'AI_UNAVAILABLE', message: err.message } });
