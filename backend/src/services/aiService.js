@@ -45,7 +45,7 @@ Include W/C Ratio and Air Content.`;
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
       {
-        model: 'claude-4-5-haiku-20241022', // Note: I corrected the model name here too!
+        model: 'claude-haiku-4-5-20251001', // Note: I corrected the model name here too!
         max_tokens: 1024,
         system: systemPrompt, 
         messages: formattedMessages
