@@ -347,59 +347,59 @@ router.post('/:chat_id/messages', validate(postMessageSchema), async (req, res) 
 });
 
 // ─── POST /api/chats/:chat_id/ai-response ────────────────────────
+const { parseMixDesignResponse } = require('../services/responseParser');
+
 router.post('/:chat_id/ai-response', async (req, res) => {
   try {
     const chat = await getOwnedChat(req.params.chat_id, req.user.id);
     if (!chat) return notFound(res, 'Chat');
 
-    // Fetch full message history
-    const { data: messages, error: msgErr } = await supabase
+    const { data: messages } = await supabase
       .from('messages')
       .select('role, content')
       .eq('chat_id', chat.id)
       .is('deleted_at', null)
       .order('created_at', { ascending: true });
 
-    if (msgErr || !messages?.length) {
+    if (!messages?.length) {
       return res.status(400).json({ success: false, error: { code: 'EMPTY_CHAT', message: 'No messages to respond to' } });
     }
 
-    // Call Claude
-    const { content, thinkingTimeMs } = await getAIResponse(messages);
+    // CHANGE: Pass selected code standard to Claude
+    const { content, thinkingTimeMs } = await getAIResponse(
+      messages,
+      req.body.code_standard || selectedCodeStandard  // ← ADD THIS
+    );
 
-    // Persist AI message
-    const { data: aiMsg, error: saveErr } = await supabase
+    // Parse the response
+    const parsedDesign = parseMixDesignResponse(content);  // ← ADD THIS
+
+    const { data: aiMsg } = await supabase
       .from('messages')
       .insert({ id: uuidv4(), chat_id: chat.id, role: 'assistant', content })
       .select()
       .single();
 
-    if (saveErr) {
-      logger.error('Save AI message error', { error: saveErr.message });
-      return res.status(500).json({
-        success: false,
-        error: {
-          code: 'DB_ERROR',
-          message: saveErr.message
-        }
-      });
+    // OPTIONAL: Save the parsed design
+    if (Object.keys(parsedDesign.materials).length > 0) {
+      await supabase
+        .from('designs')
+        .insert({
+          id: uuidv4(),
+          user_id: req.user.id,
+          chat_id: chat.id,
+          mix_design: parsedDesign.materials,
+          compliance: { code: chat.code_standard || 'EN206' },
+          input_params: { code_standard: chat.code_standard || 'EN206' }
+        });
     }
 
     await supabase.from('chats').update({ updated_at: new Date().toISOString() }).eq('id', chat.id);
 
-    return created(res, { ...aiMsg, status: 'delivered', thinking_time_ms: thinkingTimeMs });
+    return created(res, { ...aiMsg, status: 'delivered', design: parsedDesign });
   } catch (err) {
-    if (err.message.includes('timed out') || err.message.includes('unavailable')) {
-      return res.status(503).json({ success: false, error: { code: 'AI_UNAVAILABLE', message: err.message } });
-    }
-    logger.error('AI response handler error', { error: err.message });
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: 'SERVER_ERROR',
-        message: err.message
-      }
-    });
+    logger.error('AI response error', { error: err.message });
+    return res.status(503).json({ success: false, error: { code: 'AI_UNAVAILABLE', message: err.message } });
   }
 });
 

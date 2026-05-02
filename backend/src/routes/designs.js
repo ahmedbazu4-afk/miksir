@@ -142,22 +142,19 @@ router.get('/', async (req, res) => {
 
 // ─── GET /api/designs/:design_id ─────────────────────────────────
 router.get('/:design_id', async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('designs')
-      .select('*')
-      .eq('id', req.params.design_id)
-      .eq('user_id', req.user.id)
-      .is('deleted_at', null)
-      .single();
+  const { data, error } = await supabase
+    .from('designs')
+    .select(`
+      *,
+      chats(id, title, code_standard)
+    `)
+    .eq('id', req.params.design_id)
+    .eq('user_id', req.user.id)
+    .is('deleted_at', null)
+    .single();
 
-    if (error || !data) return notFound(res, 'Design');
-
-    return success(res, data);
-  } catch (err) {
-    logger.error('Get design handler error', { error: err.message });
-    return serverError(res);
-  }
+  if (error || !data) return notFound(res, 'Design');
+  return success(res, data);
 });
 
 // ─── GET /api/designs/:design_id/export/pdf ──────────────────────

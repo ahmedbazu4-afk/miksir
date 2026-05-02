@@ -14,6 +14,7 @@ const userRoutes      = require('./routes/users');
 const chatRoutes      = require('./routes/chats');
 const designRoutes    = require('./routes/designs');
 const standardRoutes  = require('./routes/standards');
+const shareRoutes = require('./routes/share');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -94,6 +95,7 @@ app.use('/api/users',      userRoutes);
 app.use('/api/chats',      chatRoutes);
 app.use('/api/designs',    designRoutes);
 app.use('/api/standards',  standardRoutes);
+app.use('/api', shareRoutes); 
 
 // ─── 404 & error handlers (must be last) ─────────────────────────
 app.use(notFoundHandler);
