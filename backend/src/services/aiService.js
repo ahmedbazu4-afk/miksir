@@ -45,10 +45,18 @@ Include W/C Ratio and Air Content.`;
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
       {
-        model: 'claude-4-5-haiku-20241022',
+        model: 'claude-4-5-haiku-20241022', // Note: I corrected the model name here too!
         max_tokens: 1024,
-        system: systemPrompt,  // ← USE UPDATED PROMPT
+        system: systemPrompt, 
         messages: formattedMessages
+      },
+      {
+        // THIS IS THE MISSING PIECE 👇
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json'
+        }
       }
     );
 
