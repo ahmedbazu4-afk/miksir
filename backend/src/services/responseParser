@@ -9,51 +9,69 @@ function parseMixDesignResponse(text) {
     clarifications: []
   };
 
-  // Split text into lines to process the table row by row safely
-  const lines = text.split('\n');
+  // 1. Extract data from Markdown Tables
+  const tableRegex = /\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/g;
+  let match;
   
-  lines.forEach(line => {
-    // Check if the line looks like a table row (contains a pipe | )
-    if (line.includes('|') && !line.includes('---')) {
-      const cells = line.split('|').map(c => c.trim()).filter(c => c.length > 0);
+  while ((match = tableRegex.exec(text)) !== null) {
+    const label = match[1].trim().toLowerCase();
+    const rawValue = match[2].trim().replace(/[*`~]/g, ''); // Clean markdown bold/italics
+    
+    // Extract first number for general use
+    const numMatch = rawValue.match(/[0-9.]+/);
+    const num = numMatch ? parseFloat(numMatch[0]) : null;
+
+    if (num !== null) {
+      // --- MATERIALS ---
+      if (label.includes('cement') && !label.includes('content') && !label.includes('ratio')) {
+        design.materials.cement = num;
+      } else if (label.includes('water') && !label.includes('ratio')) {
+        design.materials.water = num;
+      } else if (label.includes('fine aggregate') || label.includes('sand')) {
+        design.materials.fine_aggregate = (design.materials.fine_aggregate || 0) + num;
+      } else if (label.includes('coarse aggregate') || label.includes('gravel')) {
+        // Adds up multiple sizes (e.g., 4-16mm + 16-32mm)
+        design.materials.coarse_aggregate = (design.materials.coarse_aggregate || 0) + num;
+      } 
       
-      if (cells.length >= 2) {
-        const label = cells[0].toLowerCase();
-        
-        // Remove markdown bold (**), backticks, and isolate the number
-        const rawValue = cells[1].replace(/[*`]/g, ''); 
-        const numMatch = rawValue.match(/[0-9.]+/);
-        
-        if (numMatch) {
-          const num = parseFloat(numMatch[0]);
-          
-          if (!isNaN(num)) {
-            if (label.includes('cement')) {
-              design.materials.cement = num;
-            } else if (label.includes('water')) {
-              design.materials.water = num;
-            } else if (label.includes('fine aggregate') || label.includes('sand')) {
-              // Add up multiple sand types if present
-              design.materials.fine_aggregate = (design.materials.fine_aggregate || 0) + num;
-            } else if (label.includes('coarse aggregate') || label.includes('gravel')) {
-              // Add up multiple coarse aggregate sizes (e.g., 600 + 510)
-              design.materials.coarse_aggregate = (design.materials.coarse_aggregate || 0) + num;
-            }
-          }
+      // --- RATIOS & PARAMS ---
+      else if (label.includes('w/c')) {
+        design.ratios.w_c_ratio = num;
+      } else if (label.includes('air content')) {
+        design.ratios.air_content = num;
+      } else if (label.includes('strength class') || label.includes('target')) {
+        // Specifically look for fcm (Target Mean Strength)
+        const fcmMatch = rawValue.match(/fcm\s*=\s*([0-9.]+)/i) || rawValue.match(/mean.*([0-9.]+)/i);
+        if (fcmMatch) {
+          design.ratios.target_mean_strength = parseFloat(fcmMatch[1]);
+        } else {
+          // Fallback: If fcm isn't explicit, usually Target = fck + 8
+          design.ratios.target_mean_strength = num + 8; 
         }
+      } else if (label.includes('unit weight') || label.includes('density')) {
+        design.ratios.unit_weight = num;
       }
     }
-  });
+  }
 
-  // Extract W/C ratio and Air Content
-  const wcMatch = text.match(/w\/c\s*(?:ratio)?[:\s*]+([0-9.]+)/i) || text.match(/W\/C Ratio\s*\|\s*([0-9.]+)/i);
-  if (wcMatch) design.ratios.w_c_ratio = parseFloat(wcMatch[1]);
+  // 2. Fallback text extraction (if Claude put ratios outside of tables)
+  if (!design.ratios.w_c_ratio) {
+    const wcTextMatch = text.match(/w\/c\s*(?:ratio)?[|\s:]+([0-9.]+)/i);
+    if (wcTextMatch) design.ratios.w_c_ratio = parseFloat(wcTextMatch[1]);
+  }
+  if (!design.ratios.air_content) {
+    const airTextMatch = text.match(/air\s*(?:content|entrainment)[|\s:]+([0-9.]+)%/i);
+    if (airTextMatch) design.ratios.air_content = parseFloat(airTextMatch[1]);
+  }
 
-  const airMatch = text.match(/air\s*(?:content|entrainment)[:\s*]+([0-9.]+)%/i) || text.match(/Air Content[^\d]*([0-9.]+)%/i);
-  if (airMatch) design.ratios.air_content_pct = parseFloat(airMatch[1]);
-
-  const strengthMatch = text.match(/(?:target|mean)\s*strength[^\d]*([0-9.]+)/i);
-  if (strengthMatch) design.ratios.target_mean_strength = parseFloat(strengthMatch[1]);
+  // 3. Auto-Calculate Unit Weight if missing
+  if (!design.ratios.unit_weight && design.materials.cement && design.materials.water && design.materials.coarse_aggregate) {
+    design.ratios.unit_weight = 
+      (design.materials.cement || 0) + 
+      (design.materials.water || 0) + 
+      (design.materials.fine_aggregate || 0) + 
+      (design.materials.coarse_aggregate || 0);
+  }
 
   return design;
 }
