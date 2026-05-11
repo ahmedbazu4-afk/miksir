@@ -158,27 +158,33 @@ router.get('/:design_id', async (req, res) => {
 });
 
 // ─── GET /api/designs/:design_id/export/pdf ──────────────────────
-router.get('/:design_id/export/pdf', async (req, res) => {
+router.get('/:design_id/export/pdf', authenticate, async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const designId = req.params.design_id;
+
+    // 1. Fetch the design
+    const { data: design, error } = await supabase
       .from('designs')
       .select('*')
-      .eq('id', req.params.design_id)
-      .eq('user_id', req.user.id)
-      .is('deleted_at', null)
+      .eq('id', designId)
       .single();
 
-    if (error || !data) return notFound(res, 'Design');
+    if (error || !design) {
+      return res.status(404).json({ error: 'Design not found' });
+    }
 
-    const pdfBuffer = await generateMixDesignPDF(data);
+    // 2. Generate the PDF Buffer
+    const pdfBuffer = await generateMixDesignPDF(design);
 
+    // 3. Send back to frontend as a downloadable file
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="miksir-design-${data.id.slice(0, 8)}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="Miksir-Mix-Design.pdf"`);
     res.setHeader('Content-Length', pdfBuffer.length);
-    res.send(pdfBuffer);
-  } catch (err) {
-    logger.error('PDF export error', { error: err.message });
-    return serverError(res);
+    res.end(pdfBuffer);
+
+  } catch (error) {
+    console.error('PDF Generation Error', error);
+    res.status(500).json({ error: 'Failed to generate PDF document' });
   }
 });
 

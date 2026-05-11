@@ -358,9 +358,61 @@ async function getConcreteAdvisory(location, mixDesign = {}) {
   }
 }
 
+/**
+ * Advanced Concrete Pouring Analyzer
+ * Predicts slump loss and finds the best pouring windows.
+ */
+function analyzePouringSchedule(forecastData) {
+  const schedule = {};
+
+  if (!forecastData || !forecastData.list) return [];
+
+  forecastData.list.forEach(block => {
+    const dateObj = new Date(block.dt * 1000);
+    const dateStr = dateObj.toLocaleDateString('en-GB'); 
+    const hour = dateObj.getHours();
+
+    const temp = block.main.temp;
+    const humidity = block.main.humidity;
+    const weatherMain = block.weather[0].main; 
+
+    if (!schedule[dateStr]) {
+      schedule[dateStr] = {
+        date: dateStr,
+        is_suitable_day: false,
+        optimal_hours: [],
+        daily_warnings: []
+      };
+    }
+
+    let slumpLossRisk = "Low";
+    if (temp > 30 || (temp > 25 && humidity < 40)) slumpLossRisk = "High (Requires Retarder)";
+    else if (temp > 25) slumpLossRisk = "Moderate";
+
+    const isRaining = weatherMain.includes("Rain") || weatherMain.includes("Drizzle");
+    const isFreezing = temp <= 4; 
+
+    if (!isRaining && !isFreezing && temp <= 32) {
+      schedule[dateStr].is_suitable_day = true;
+      schedule[dateStr].optimal_hours.push({
+        time: `${hour}:00`,
+        temp: Math.round(temp) + '°C',
+        slump_loss_risk: slumpLossRisk,
+        status: 'Optimal 🟢'
+      });
+    } else {
+      if (isRaining) schedule[dateStr].daily_warnings.push(`Rain expected at ${hour}:00`);
+      if (isFreezing) schedule[dateStr].daily_warnings.push(`Freezing temps at ${hour}:00. Frost risk.`);
+    }
+  });
+
+  return Object.values(schedule);
+}
+
 module.exports = {
   getConcreteAdvisory,
   getWeatherForecast,
+  analyzePouringSchedule,
   geocodeLocation,
   analyzeConcreteConditions
 };

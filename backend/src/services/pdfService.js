@@ -15,7 +15,16 @@ const generateMixDesignPDF = (design) => {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const { mix_design, compliance, justification, qa_notes, field_tips, created_at } = design;
+    // ADDED DEFAULT FALLBACKS HERE so undefined values don't crash the script
+    const { 
+      mix_design = {}, 
+      compliance = { code: 'EN206', overall: 'UNKNOWN' }, 
+      justification = {}, 
+      qa_notes = '', 
+      field_tips = [], 
+      created_at 
+    } = design || {};
+
     const CLAY = '#C46A3C';
     const SLATE = '#3A3A3A';
     const DUSTY = '#7A8A8F';
@@ -26,26 +35,29 @@ const generateMixDesignPDF = (design) => {
        .text('MIKSIR', 50, 25, { align: 'left' });
     doc.fontSize(11).font('Helvetica')
        .text('AI Concrete Mix Design Report', 50, 52, { align: 'left' });
-    doc.text(new Date(created_at).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' }),
-       0, 52, { align: 'right', width: doc.page.width - 50 });
+    
+    // Fallback for date if created_at is missing
+    const dateStr = created_at ? new Date(created_at).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-GB');
+    doc.text(dateStr, 0, 52, { align: 'right', width: doc.page.width - 50 });
 
     doc.moveDown(3);
 
     // ─── Mix Proportions ───────────────────────────────────────
     section(doc, 'MIX PROPORTIONS (per m³ of concrete)', CLAY);
 
+    // ADDED `?.` and fallback `|| '-'` to prevent crashes
     const props = [
-      ['Cement', `${mix_design.cement} kg/m³`],
-      ['Water', `${mix_design.water} kg/m³`],
-      ['Fine Aggregate (SSD)', `${mix_design.fine_aggregate_ssd} kg/m³`],
-      ['Coarse Aggregate (SSD)', `${mix_design.coarse_aggregate_ssd} kg/m³`],
-      ['Air Content', `${mix_design.air_content_pct}%`],
-      ['w/c Ratio', mix_design.w_c_ratio],
-      ['Target Mean Strength', `${mix_design.target_mean_strength} MPa`],
-      ['Unit Weight (fresh)', `${mix_design.unit_weight} kg/m³`],
+      ['Cement', `${mix_design?.cement || '-'} kg/m³`],
+      ['Water', `${mix_design?.water || '-'} kg/m³`],
+      ['Fine Aggregate (SSD)', `${mix_design?.fine_aggregate_ssd || mix_design?.fine_aggregate || '-'} kg/m³`],
+      ['Coarse Aggregate (SSD)', `${mix_design?.coarse_aggregate_ssd || mix_design?.coarse_aggregate || '-'} kg/m³`],
+      ['Air Content', `${mix_design?.air_content_pct || '-'}%`],
+      ['w/c Ratio', mix_design?.w_c_ratio || '-'],
+      ['Target Mean Strength', `${mix_design?.target_mean_strength || '-'} MPa`],
+      ['Unit Weight (fresh)', `${mix_design?.unit_weight || '-'} kg/m³`],
     ];
 
-    if (mix_design.admixtures && Object.keys(mix_design.admixtures).length) {
+    if (mix_design?.admixtures && Object.keys(mix_design.admixtures).length > 0) {
       Object.entries(mix_design.admixtures).forEach(([k, v]) => {
         props.push([`Admixture: ${k}`, `${v} kg/m³`]);
       });
@@ -54,40 +66,48 @@ const generateMixDesignPDF = (design) => {
     table(doc, props, SLATE, DUSTY);
 
     // ─── Batching Quantities ──────────────────────────────────
-    section(doc, 'BATCHING QUANTITIES (current aggregate moisture)', CLAY);
-    table(doc, [
-      ['Cement', `${mix_design.batching.cement} kg`],
-      ['Water to Add', `${mix_design.batching.water_to_add} kg`],
-      ['Fine Aggregate (current)', `${mix_design.batching.fine_aggregate} kg`],
-      ['Coarse Aggregate (current)', `${mix_design.batching.coarse_aggregate} kg`],
-    ], SLATE, DUSTY);
+    if (mix_design?.batching) {
+      section(doc, 'BATCHING QUANTITIES (current aggregate moisture)', CLAY);
+      table(doc, [
+        ['Cement', `${mix_design.batching?.cement || '-'} kg`],
+        ['Water to Add', `${mix_design.batching?.water_to_add || '-'} kg`],
+        ['Fine Aggregate (current)', `${mix_design.batching?.fine_aggregate || '-'} kg`],
+        ['Coarse Aggregate (current)', `${mix_design.batching?.coarse_aggregate || '-'} kg`],
+      ], SLATE, DUSTY);
+    }
 
     // ─── Volumetric Breakdown ─────────────────────────────────
-    section(doc, 'VOLUMETRIC BREAKDOWN (m³ per m³ concrete)', CLAY);
-    table(doc, Object.entries(mix_design.volumes).map(([k, v]) => [
-      k.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()), `${v} m³`
-    ]), SLATE, DUSTY);
+    if (mix_design?.volumes && Object.keys(mix_design.volumes).length > 0) {
+      section(doc, 'VOLUMETRIC BREAKDOWN (m³ per m³ concrete)', CLAY);
+      table(doc, Object.entries(mix_design.volumes).map(([k, v]) => [
+        k.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()), `${v} m³`
+      ]), SLATE, DUSTY);
+    }
 
     // ─── Compliance Checks ────────────────────────────────────
-    section(doc, `COMPLIANCE — ${compliance.code}  [${compliance.overall}]`, CLAY);
+    section(doc, `COMPLIANCE — ${compliance?.code || 'EN206'}  [${compliance?.overall || 'PENDING'}]`, CLAY);
 
-    compliance.checks.forEach((c) => {
-      const color = c.status === 'PASS' ? '#27ae60' : c.status === 'WARNING' ? '#e67e22' : '#c0392b';
-      doc.fontSize(10).fillColor(color).font('Helvetica-Bold').text(`  ● ${c.status}`, { continued: true });
-      doc.fillColor(SLATE).font('Helvetica').text(`  ${c.description}`);
-      if (c.required !== undefined) doc.fillColor(DUSTY).fontSize(9).text(`       Required: ${c.required}  |  Actual: ${c.actual}${c.unit ? ' ' + c.unit : ''}`);
-      if (c.limit !== undefined) doc.fillColor(DUSTY).fontSize(9).text(`       Limit: ${c.limit}  |  Actual: ${c.actual}`);
-      doc.moveDown(0.3);
-    });
+    if (compliance?.checks && Array.isArray(compliance.checks)) {
+      compliance.checks.forEach((c) => {
+        const color = c.status === 'PASS' ? '#27ae60' : c.status === 'WARNING' ? '#e67e22' : '#c0392b';
+        doc.fontSize(10).fillColor(color).font('Helvetica-Bold').text(`  ● ${c.status}`, { continued: true });
+        doc.fillColor(SLATE).font('Helvetica').text(`  ${c.description}`);
+        if (c.required !== undefined) doc.fillColor(DUSTY).fontSize(9).text(`      Required: ${c.required}  |  Actual: ${c.actual}${c.unit ? ' ' + c.unit : ''}`);
+        if (c.limit !== undefined) doc.fillColor(DUSTY).fontSize(9).text(`      Limit: ${c.limit}  |  Actual: ${c.actual}`);
+        doc.moveDown(0.3);
+      });
+    }
 
     // ─── Justification ────────────────────────────────────────
-    section(doc, 'DESIGN JUSTIFICATION', CLAY);
-    Object.entries(justification).forEach(([k, v]) => {
-      doc.fontSize(10).fillColor(CLAY).font('Helvetica-Bold')
-         .text(k.replace(/_/g, ' ').toUpperCase() + ':', { continued: true });
-      doc.fillColor(SLATE).font('Helvetica').text('  ' + v);
-      doc.moveDown(0.3);
-    });
+    if (justification && Object.keys(justification).length > 0) {
+      section(doc, 'DESIGN JUSTIFICATION', CLAY);
+      Object.entries(justification).forEach(([k, v]) => {
+        doc.fontSize(10).fillColor(CLAY).font('Helvetica-Bold')
+           .text(k.replace(/_/g, ' ').toUpperCase() + ':', { continued: true });
+        doc.fillColor(SLATE).font('Helvetica').text('  ' + v);
+        doc.moveDown(0.3);
+      });
+    }
 
     // ─── QA Notes ────────────────────────────────────────────
     if (qa_notes) {
@@ -97,7 +117,7 @@ const generateMixDesignPDF = (design) => {
     }
 
     // ─── Field Tips ───────────────────────────────────────────
-    if (field_tips?.length) {
+    if (field_tips && Array.isArray(field_tips) && field_tips.length > 0) {
       section(doc, 'FIELD TIPS', CLAY);
       field_tips.forEach((tip, i) => {
         doc.fontSize(10).fillColor(SLATE).font('Helvetica').text(`${i + 1}. ${tip}`);
