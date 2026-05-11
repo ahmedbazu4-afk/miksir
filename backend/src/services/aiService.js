@@ -46,7 +46,7 @@ Include W/C Ratio and Air Content.`;
       'https://api.anthropic.com/v1/messages',
       {
         model: 'claude-sonnet-4-6', 
-        max_tokens: 1024,
+        max_tokens: 4096,
         system: systemPrompt, 
         messages: formattedMessages
       },
@@ -107,8 +107,8 @@ async function streamAIResponse(messages, res) {
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
       {
-        model: 'claude-3-5-haiku-20241022',
-        max_tokens: 1024,
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4096,
         system: `You are Miksir, an AI assistant for concrete mix design. You help civil engineers design concrete mixes that comply with ACI 211, EN 206, BS 8500, and TS 500 standards.
 
 When a user describes their concrete project, you:
