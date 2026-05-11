@@ -365,10 +365,10 @@ router.post('/:chat_id/ai-response', async (req, res) => {
       return res.status(400).json({ success: false, error: { code: 'EMPTY_CHAT', message: 'No messages to respond to' } });
     }
 
-    // CHANGE: Pass selected code standard to Claude
+    // ✨ FIX 1: Prevent crash by using the database's code_standard instead of an undefined variable
     const { content, thinkingTimeMs } = await getAIResponse(
       messages,
-      req.body.code_standard || selectedCodeStandard  // ← ADD THIS
+      req.body.code_standard || chat.code_standard || 'EN206'
     );
 
     // Parse the response from Claude
@@ -381,27 +381,36 @@ router.post('/:chat_id/ai-response', async (req, res) => {
       .select()
       .single();
 
-    // ✨ THIS IS THE FIX: Create a variable to hold the new Design ID
+    // Create a variable to hold the new Design ID
     let newDesignId = null; 
 
     // Save the actual concrete mix design to the designs table
     if (Object.keys(parsedDesign.materials).length > 0) {
-      newDesignId = uuidv4(); // Generate the ID here
-      await supabase
+      newDesignId = uuidv4(); 
+      
+      // ✨ FIX 2: Provide 'justification' to satisfy the DB constraint and catch errors
+      const { error: designError } = await supabase
         .from('designs')
         .insert({
-          id: newDesignId, // Save it using this specific ID
+          id: newDesignId,
           user_id: req.user.id,
           chat_id: chat.id,
           mix_design: parsedDesign.materials,
           compliance: { code: chat.code_standard || 'EN206' },
+          justification: {}, // <--- Satisfies the NOT NULL constraint!
           input_params: { code_standard: chat.code_standard || 'EN206' }
         });
+
+      // Catch and log any Supabase rejections to stop silent failures
+      if (designError) {
+        logger.error('Failed to save design to DB:', { error: designError.message, details: designError.details });
+        newDesignId = null; // Nullify so the frontend doesn't try to fetch a broken PDF
+      }
     }
 
     await supabase.from('chats').update({ updated_at: new Date().toISOString() }).eq('id', chat.id);
 
-    // ✨ Return the newDesignId to the frontend!
+    // Return the newDesignId to the frontend
     return created(res, { ...aiMsg, status: 'delivered', design: parsedDesign, design_id: newDesignId });
   } catch (err) {
     logger.error('AI response error', { error: err.message });
