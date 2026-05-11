@@ -9,39 +9,51 @@ function parseMixDesignResponse(text) {
     clarifications: []
   };
 
-  // Extract materials table (markdown format)
-  const tableRegex = /\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/g;
-  let match;
+  // Split text into lines to process the table row by row safely
+  const lines = text.split('\n');
   
-  while ((match = tableRegex.exec(text)) !== null) {
-    const label = match[1].trim().toLowerCase();
-    const value = match[2].trim();
-    
-    // Extract numeric value
-    const num = parseFloat(value);
-    
-    if (label.includes('cement')) design.materials.cement = num;
-    if (label.includes('water')) design.materials.water = num;
-    if (label.includes('fine aggregate') || label.includes('sand')) design.materials.fine_aggregate = num;
-    if (label.includes('coarse aggregate') || label.includes('gravel')) design.materials.coarse_aggregate = num;
-  }
+  lines.forEach(line => {
+    // Check if the line looks like a table row (contains a pipe | )
+    if (line.includes('|') && !line.includes('---')) {
+      const cells = line.split('|').map(c => c.trim()).filter(c => c.length > 0);
+      
+      if (cells.length >= 2) {
+        const label = cells[0].toLowerCase();
+        
+        // Remove markdown bold (**), backticks, and isolate the number
+        const rawValue = cells[1].replace(/[*`]/g, ''); 
+        const numMatch = rawValue.match(/[0-9.]+/);
+        
+        if (numMatch) {
+          const num = parseFloat(numMatch[0]);
+          
+          if (!isNaN(num)) {
+            if (label.includes('cement')) {
+              design.materials.cement = num;
+            } else if (label.includes('water')) {
+              design.materials.water = num;
+            } else if (label.includes('fine aggregate') || label.includes('sand')) {
+              // Add up multiple sand types if present
+              design.materials.fine_aggregate = (design.materials.fine_aggregate || 0) + num;
+            } else if (label.includes('coarse aggregate') || label.includes('gravel')) {
+              // Add up multiple coarse aggregate sizes (e.g., 600 + 510)
+              design.materials.coarse_aggregate = (design.materials.coarse_aggregate || 0) + num;
+            }
+          }
+        }
+      }
+    }
+  });
 
-  // Extract W/C ratio
-  const wcMatch = text.match(/w\/c\s*(?:ratio)?[:\s]+([0-9.]+)/i);
+  // Extract W/C ratio and Air Content
+  const wcMatch = text.match(/w\/c\s*(?:ratio)?[:\s*]+([0-9.]+)/i) || text.match(/W\/C Ratio\s*\|\s*([0-9.]+)/i);
   if (wcMatch) design.ratios.w_c_ratio = parseFloat(wcMatch[1]);
 
-  // Extract air content
-  const airMatch = text.match(/air\s*(?:content|entrainment)[:\s]+([0-9.]+)%/i);
-  if (airMatch) design.ratios.air_content = parseFloat(airMatch[1]);
+  const airMatch = text.match(/air\s*(?:content|entrainment)[:\s*]+([0-9.]+)%/i) || text.match(/Air Content[^\d]*([0-9.]+)%/i);
+  if (airMatch) design.ratios.air_content_pct = parseFloat(airMatch[1]);
 
-  // Extract clarifications (questions asked)
-  const clarMatch = text.match(/(?:clarif|question)[\s\S]*?:\s*([\s\S]*?)(?=\n\n|$)/i);
-  if (clarMatch) {
-    design.clarifications = clarMatch[1]
-      .split('\n')
-      .filter(l => l.trim())
-      .map(l => l.replace(/^[\d.•\-]\s*/, '').trim());
-  }
+  const strengthMatch = text.match(/(?:target|mean)\s*strength[^\d]*([0-9.]+)/i);
+  if (strengthMatch) design.ratios.target_mean_strength = parseFloat(strengthMatch[1]);
 
   return design;
 }

@@ -395,7 +395,7 @@ router.post('/:chat_id/ai-response', async (req, res) => {
           id: newDesignId,
           user_id: req.user.id,
           chat_id: chat.id,
-          mix_design: parsedDesign.materials,
+          mix_design: { ...parsedDesign.materials, ...parsedDesign.ratios },
           compliance: { code: chat.code_standard || 'EN206' },
           justification: {}, // <--- Satisfies the NOT NULL constraint!
           input_params: { code_standard: chat.code_standard || 'EN206' }
