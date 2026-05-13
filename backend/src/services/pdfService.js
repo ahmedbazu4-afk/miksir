@@ -425,7 +425,7 @@ function drawComplianceSection(doc, colors, compliance) {
     currentY += 30;
     
     if (currentY > doc.page.height - 100) break; // Prevent overflow
-  });
+  }
 }
 
 function drawQASection(doc, colors, qa_notes, field_tips, justification) {
@@ -477,7 +477,7 @@ function drawQASection(doc, colors, qa_notes, field_tips, justification) {
       currentY = doc.y + 10;
       
       if (currentY > doc.page.height - 100) break;
-    });
+    }
   }
   
   // Justification
@@ -506,7 +506,7 @@ function drawQASection(doc, colors, qa_notes, field_tips, justification) {
         currentY = doc.y + 10;
         
         if (currentY > doc.page.height - 100) break;
-      });
+      }
     }
   }
 }
