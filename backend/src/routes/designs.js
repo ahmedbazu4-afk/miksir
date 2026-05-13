@@ -258,4 +258,51 @@ const buildSummary = (d) => {
   ].filter(Boolean).join(', ');
 };
 
+// Add this temporary debug endpoint to your designs.js routes:
+
+router.get('/:design_id/debug', async (req, res) => {
+  try {
+    const { data } = await supabase
+      .from('designs')
+      .select('*')
+      .eq('id', req.params.design_id)
+      .eq('user_id', req.user.id)
+      .single();
+    
+    if (!data) return notFound(res, 'Design');
+    
+    // Return the raw structure
+    return res.json({
+      success: true,
+      structure: {
+        id: data.id,
+        created_at: data.created_at,
+        mix_design: {
+          exists: !!data.mix_design,
+          type: typeof data.mix_design,
+          keys: data.mix_design ? Object.keys(data.mix_design) : [],
+          sample: data.mix_design
+        },
+        compliance: {
+          exists: !!data.compliance,
+          type: typeof data.compliance,
+          keys: data.compliance ? Object.keys(data.compliance) : [],
+          sample: data.compliance
+        },
+        justification: {
+          exists: !!data.justification,
+          type: typeof data.justification
+        },
+        field_tips: {
+          exists: !!data.field_tips,
+          type: typeof data.field_tips,
+          is_array: Array.isArray(data.field_tips)
+        }
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

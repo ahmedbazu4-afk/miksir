@@ -397,7 +397,7 @@ function drawComplianceSection(doc, colors, compliance) {
   currentY += 25;
   
   // Rows
-  compliance.checks.forEach((check, i) => {
+  for (const [i, check] of compliance.checks.entries()) {
     const bgColor = i % 2 === 0 ? colors.white : colors.lightGray;
     const statusColor = 
       check.status === 'PASS' ? colors.success :
@@ -460,7 +460,9 @@ function drawQASection(doc, colors, qa_notes, field_tips, justification) {
     
     currentY += 30;
     
-    field_tips.slice(0, 8).forEach((tip, i) => {
+    const tipsToDraw = field_tips.slice(0, 8);
+    for (let i = 0; i < tipsToDraw.length; i++) {
+      const tip = tipsToDraw[i];
       doc.circle(60, currentY + 6, 8).fillAndStroke(colors.accent, colors.accent);
       doc.fontSize(9)
          .font('Helvetica-Bold')
@@ -490,7 +492,8 @@ function drawQASection(doc, colors, qa_notes, field_tips, justification) {
       
       currentY += 30;
       
-      Object.entries(justification).slice(0, 5).forEach(([key, value]) => {
+      const entries = Object.entries(justification).slice(0, 5);
+      for (const [key, value] of entries) {
         doc.fontSize(10)
            .font('Helvetica-Bold')
            .fillColor(colors.accent)
