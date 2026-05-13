@@ -6,7 +6,8 @@ const { authenticate } = require('../middleware/auth');
 const { validate, generateDesignSchema } = require('../middleware/validation');
 const { success, created, serverError, notFound, error: apiError } = require('../utils/response');
 const { calculateMixDesign, validateMixDesignInputs } = require('../services/mixDesignEngine');
-const { generateMixDesignPDF } = require('../services/pdfService');
+const { generateMixDesignPDF } = require('../services/pdfService_premium');
+const { getConcreteAdvisory } = require('../services/weatherService');
 const logger = require('../utils/logger');
 
 router.use(authenticate);
@@ -80,7 +81,7 @@ router.post('/generate', validate(generateDesignSchema), async (req, res) => {
         justification,
         qa_notes: qaNotes,
         field_tips: fieldTips,
-        input_params: input,           // store full input for reproducibility
+        input_params: input,
       })
       .select()
       .single();
@@ -158,33 +159,69 @@ router.get('/:design_id', async (req, res) => {
 });
 
 // ─── GET /api/designs/:design_id/export/pdf ──────────────────────
-router.get('/:design_id/export/pdf', authenticate, async (req, res) => {
+// ✨ ENHANCED WITH WEATHER INTEGRATION
+router.get('/:design_id/export/pdf', async (req, res) => {
   try {
-    const designId = req.params.design_id;
-
-    // 1. Fetch the design
-    const { data: design, error } = await supabase
+    const { data, error } = await supabase
       .from('designs')
       .select('*')
-      .eq('id', designId)
+      .eq('id', req.params.design_id)
+      .eq('user_id', req.user.id)
+      .is('deleted_at', null)
       .single();
 
-    if (error || !design) {
-      return res.status(404).json({ error: 'Design not found' });
+    if (error || !data) {
+      logger.warn('Design not found for PDF export', { 
+        design_id: req.params.design_id, 
+        userId: req.user.id 
+      });
+      return notFound(res, 'Design');
     }
 
-    // 2. Generate the PDF Buffer
-    const pdfBuffer = await generateMixDesignPDF(design);
+    logger.info('Generating PDF', { 
+      design_id: data.id,
+      userId: req.user.id 
+    });
 
-    // 3. Send back to frontend as a downloadable file
+    // Optional: Include weather advisory if location provided
+    let weatherData = null;
+    const location = data.input_params?.project_context?.location;
+    
+    if (location) {
+      try {
+        logger.info('Fetching weather for PDF', { location });
+        weatherData = await getConcreteAdvisory(location, data.mix_design);
+      } catch (weatherErr) {
+        logger.warn('Weather fetch failed for PDF', { error: weatherErr.message });
+        // Continue without weather data
+      }
+    }
+
+    const pdfBuffer = await generateMixDesignPDF(data, {
+      weather: weatherData,
+      branding: {
+        company_name: req.user.company_name || null,
+        engineer_name: req.user.name || null
+      }
+    });
+
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="Miksir-Mix-Design.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="miksir-design-${data.id.slice(0, 8)}.pdf"`);
     res.setHeader('Content-Length', pdfBuffer.length);
-    res.end(pdfBuffer);
-
-  } catch (error) {
-    console.error('PDF Generation Error', error);
-    res.status(500).json({ error: 'Failed to generate PDF document' });
+    
+    logger.info('PDF generated successfully', { 
+      design_id: data.id,
+      size: pdfBuffer.length 
+    });
+    
+    res.send(pdfBuffer);
+  } catch (err) {
+    logger.error('PDF export error', { 
+      error: err.message,
+      stack: err.stack,
+      design_id: req.params.design_id
+    });
+    return serverError(res, 'Failed to generate PDF. Please try again.');
   }
 });
 
@@ -217,7 +254,7 @@ const buildSummary = (d) => {
   return [
     md?.w_c_ratio ? `w/c ${md.w_c_ratio}` : null,
     cc?.code || null,
-    md?.target_mean_strength ? `Target ${md.target_mean_strength - 8} MPa` : null,
+    md?.target_mean_strength ? `Target ${md.target_mean_strength} MPa` : null,
   ].filter(Boolean).join(', ');
 };
 
