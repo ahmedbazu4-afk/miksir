@@ -6,7 +6,7 @@ const { authenticate } = require('../middleware/auth');
 const { validate, generateDesignSchema } = require('../middleware/validation');
 const { success, created, serverError, notFound, error: apiError } = require('../utils/response');
 const { calculateMixDesign, validateMixDesignInputs } = require('../services/mixDesignEngine');
-const { generateMixDesignPDF } = require('../services/pdfService_premium');
+const { generateMixDesignPDF } = require('../services/pdfService');
 const { getConcreteAdvisory } = require('../services/weatherService');
 const logger = require('../utils/logger');
 
