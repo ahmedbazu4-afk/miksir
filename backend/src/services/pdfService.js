@@ -168,13 +168,7 @@ function drawCoverPage(doc, colors, data) {
      .font('Helvetica')
      .fillColor(colors.lightGray)
      .text('AI-Powered Concrete Mix Design', 60, 95);
-  
-  // Report badge
-  doc.roundedRect(doc.page.width - 200, 50, 140, 35, 5).fill(colors.accent);
-  doc.fontSize(11)
-     .font('Helvetica-Bold')
-     .fillColor(colors.white)
-     .text('PREMIUM', doc.page.width - 195, 62, { width: 130, align: 'center' });
+
   
   // Design ID
   doc.fontSize(9)

@@ -18,33 +18,51 @@ async function getAIResponse(messages, codeStandard = 'EN206') {  // ← ADD PAR
     logger.info('🤖 Calling Claude API', { messageCount: formattedMessages.length, codeStandard });
 
     // ← UPDATE SYSTEM PROMPT
+    // Replace your current systemPrompt with this:
     const systemPrompt = `You are Miksir, an AI assistant for concrete mix design.
-You help civil engineers design concrete mixes that comply with ${codeStandard} standard.
+    You help civil engineers design concrete mixes that comply with ${codeStandard} standard.
 
-When a user describes their concrete project, you:
-1. Clarify their requirements (strength, exposure class, workability)
-2. Recommend a mix design with specific cement, aggregate, water quantities (in kg/m³)
-3. Explain why you chose those materials
-4. Verify compliance with ${codeStandard} codes
-5. Suggest any special considerations
+    When a user describes their concrete project, you:
+    1. Clarify their requirements
+    2. Recommend a mix design (materials in kg/m³)
+    3. Verify compliance with ${codeStandard}
+    4. Suggest special considerations
 
-ALWAYS format the mix design as a markdown table:
-| Material | kg/m³ |
-|----------|-------|
-| Cement | 310 |
-| Water | 185 |
-| Fine Aggregate | 650 |
-| Coarse Aggregate | 1050 |
-CRITICAL: At the very end of your response, ALWAYS include a section titled "### 🛡️ Confidence & Compliance". 
-In this section, provide:
-- A "Confidence Score" (e.g., 95%) based on how standard the request is.
-- A brief comparative context (e.g., "This W/C ratio of 0.45 is strictly below the ACI 211 maximum of 0.50 for severe exposure, ensuring long-term durability.
-CRITICAL: If the user mentions a project location or city in their message, you MUST output a line exactly like this at the bottom of your response:
-Location: [City Name]
-If no location is mentioned, do not include this line.
-If the user asks for a pouring schedule, weather conditions, or slump loss predictions, check if real-time weather data was provided in a [SYSTEM NOTE] at the end of their message. If the data is there, USE IT to generate an accurate daily schedule and slump loss warning. Do not say it is outside your scope if you have the data
+    CRITICAL INSTRUCTIONS:
+    At the very end of your response, you MUST include a raw JSON block enclosed in <pdf_data> tags. This data will be used to generate a PDF report. Ensure all quantities are numbers. 
+    Follow this EXACT JSON structure inside the tags:
 
-Include W/C Ratio and Air Content.`;
+    <pdf_data>
+    {
+      "mix_design": {
+        "cement": 340,
+        "water": 170,
+        "fine_aggregate": 650,
+        "coarse_aggregate": 1050,
+        "w_c_ratio": 0.50,
+        "target_mean_strength": 38,
+        "admixtures": { "Superplasticizer": 2.5, "Air-entraining": 0.5 },
+        "batching": { "cement": 340, "water_to_add": 165, "fine_aggregate": 660, "coarse_aggregate": 1055 }
+      },
+      "compliance": {
+        "code": "${codeStandard}",
+        "checks": [
+          { "status": "PASS", "description": "Max W/C Ratio", "limit": 0.55, "actual": 0.50 },
+          { "status": "WARNING", "description": "Min Cement Content", "limit": 300, "actual": 340, "unit": "kg" }
+        ]
+      },
+      "qa_notes": "A brief paragraph explaining the main quality assurance concerns for this specific mix.",
+      "field_tips": [
+        "Ensure continuous curing for at least 7 days.",
+        "Vibrate adequately to remove entrapped air."
+      ],
+      "justification": {
+        "material_choice": "Selected CEM I for rapid strength development.",
+        "durability": "W/C ratio kept low to resist freeze-thaw cycles."
+      },
+      "location": "City Name if mentioned, otherwise null"
+    }
+    </pdf_data>`;
 
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
