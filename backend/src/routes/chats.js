@@ -371,10 +371,12 @@ router.post('/:chat_id/ai-response', async (req, res) => {
     const latestUserMessage = messages[messages.length - 1].content;
     let injectedWeatherContext = "";
     
-    // Quick regex to check if they mentioned a location (you can expand this list)
-    // Or ideally, pass the location from your frontend in req.body.location
-    const locationMatch = latestUserMessage.match(/in\s+([a-zA-Z\s]+)|for\s+([a-zA-Z\s]+)/i);
-    const location = req.body.location || (locationMatch ? (locationMatch[1] || locationMatch[2]).trim() : null);
+    // Improved Regex: Grabs only the 1 or 2 words immediately following in/for/at
+    const locationMatch = latestUserMessage.match(/(?:in|for|at)\s+([a-zA-ZçğıöşüÇĞIÖŞÜ]+(?:\s[a-zA-ZçğıöşüÇĞIÖŞÜ]+)?)/i);
+    
+    // Clean up the extracted location (e.g. remove words like "this" if it grabbed "Kayseri this")
+    let rawLocation = req.body.location || (locationMatch ? locationMatch[1].trim() : null);
+    let location = rawLocation ? rawLocation.replace(/\b(this|the|a|an|with)\b/gi, '').trim() : null;
 
     if (location) {
       try {
