@@ -8,25 +8,39 @@ function parseMixDesignResponse(text) {
   if (jsonMatch && jsonMatch[1]) {
     try {
       const parsedData = JSON.parse(jsonMatch[1].trim());
+      const mix_design = parsedData.mix_design || {};
       
-      // Return the perfectly formatted object for your database/PDF
       return {
         format: 'json_extracted',
-        mix_design: parsedData.mix_design || {},
+        // --- NEW STRUCTURE (For Database and PDF) ---
+        mix_design: mix_design,
         compliance: parsedData.compliance || {},
         qa_notes: parsedData.qa_notes || null,
         field_tips: parsedData.field_tips || null,
         justification: parsedData.justification || {},
-        location: parsedData.location || null
+        location: parsedData.location || null,
+        
+        // --- OLD STRUCTURE (For Backend Backwards Compatibility) ---
+        materials: {
+          cement: mix_design.cement,
+          water: mix_design.water,
+          fine_aggregate: mix_design.fine_aggregate,
+          coarse_aggregate: mix_design.coarse_aggregate,
+          ...(mix_design.admixtures || {})
+        },
+        ratios: {
+          w_c_ratio: mix_design.w_c_ratio,
+          target_mean_strength: mix_design.target_mean_strength,
+          air_content: mix_design.air_content
+        },
+        clarifications: []
       };
     } catch (err) {
-      logger.error('Failed to parse AI JSON block', { error: err.message, rawText: jsonMatch[1] });
-      // If JSON parsing fails, fall back to the basic regex below
+      logger.error('Failed to parse AI JSON block', { error: err.message });
     }
   }
 
-  // 2. FALLBACK: If Claude forgot the <pdf_data> tag, use your old Regex method
-  // (Keep your exact existing code here as a safety net)
+  // 2. FALLBACK: Old regex logic if Claude forgets the JSON block
   const design = { format: 'markdown', materials: {}, ratios: {}, location: null };
   const tableRegex = /\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/g;
   let match;
@@ -50,15 +64,19 @@ function parseMixDesignResponse(text) {
   const locationMatch = text.match(/Location:\s*(.+)/i);
   if (locationMatch) design.location = locationMatch[1].trim().replace(/\.$/, '').replace(/[*`~]/g, '');
 
-  // Map the fallback to look like the DB schema so the PDF doesn't break entirely
   return {
     format: 'fallback_regex',
+    // New structure
     mix_design: { ...design.materials, ...design.ratios },
     compliance: { code: "Unknown", checks: [] },
     qa_notes: null,
     field_tips: [],
     justification: {},
-    location: design.location
+    location: design.location,
+    // Old structure (Backwards compatibility)
+    materials: design.materials,
+    ratios: design.ratios,
+    clarifications: []
   };
 }
 
