@@ -2,17 +2,27 @@
  * Extract mix design data from Claude's text response
  */
 function parseMixDesignResponse(text) {
-  // 1. Try to extract the structured JSON block
-  const jsonMatch = text.match(/<pdf_data>([\s\S]*?)<\/pdf_data>/i);
-  
-  if (jsonMatch && jsonMatch[1]) {
+  let jsonString = null;
+
+  // 1. First, try to find the <pdf_data> tags
+  const tagMatch = text.match(/<pdf_data>([\s\S]*?)<\/pdf_data>/i);
+  if (tagMatch && tagMatch[1]) {
+    jsonString = tagMatch[1];
+  } else {
+    // 2. BACKUP: If Claude forgot the tags, look for a large JSON object at the very end of the text
+    const bracketMatch = text.match(/(\{\s*"mix_design"[\s\S]*\})\s*$/i);
+    if (bracketMatch && bracketMatch[1]) {
+      jsonString = bracketMatch[1];
+    }
+  }
+
+  if (jsonString) {
     try {
-      const parsedData = JSON.parse(jsonMatch[1].trim());
+      const parsedData = JSON.parse(jsonString.trim());
       const mix_design = parsedData.mix_design || {};
       
       return {
         format: 'json_extracted',
-        // --- NEW STRUCTURE (For Database and PDF) ---
         mix_design: mix_design,
         compliance: parsedData.compliance || {},
         qa_notes: parsedData.qa_notes || null,
@@ -20,7 +30,7 @@ function parseMixDesignResponse(text) {
         justification: parsedData.justification || {},
         location: parsedData.location || null,
         
-        // --- OLD STRUCTURE (For Backend Backwards Compatibility) ---
+        // Old structure for backwards compatibility
         materials: {
           cement: mix_design.cement,
           water: mix_design.water,
