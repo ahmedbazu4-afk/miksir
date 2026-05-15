@@ -370,7 +370,8 @@ router.post('/:chat_id/ai-response', async (req, res) => {
       const latestUserMessage = messages[messages.length - 1].content;
       let injectedWeatherContext = "";
       
-      const locationMatch = latestUserMessage.match(/(?:in|for|at)\s+([a-zA-ZçğıöşüÇĞIÖŞÜ]+(?:\s[a-zA-ZçğıöşüÇĞIÖŞÜ]+)?)/i);
+      const locationMatch = latestUserMessage.match(/\b(?:in|for|at)\b\s+([a-zA-ZçğıöşüÇĞIÖŞÜ]+(?:\s[a-zA-ZçğıöşüÇĞIÖŞÜ]+)?)/i);
+    
       let rawLocation = req.body.location || (locationMatch ? locationMatch[1].trim() : null);
       let location = rawLocation ? rawLocation.replace(/\b(this|the|a|an|with)\b/gi, '').trim() : null;
 
