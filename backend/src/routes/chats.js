@@ -366,7 +366,35 @@ router.post('/:chat_id/ai-response', async (req, res) => {
       return res.status(400).json({ success: false, error: { code: 'EMPTY_CHAT', message: 'No messages to respond to' } });
     }
 
-    // ✨ FIX 1: Prevent crash by using the database's code_standard instead of an undefined variable
+    // 🟢 NEW: PRE-FETCH WEATHER BEFORE CALLING CLAUDE
+    // Grab the latest user message
+    const latestUserMessage = messages[messages.length - 1].content;
+    let injectedWeatherContext = "";
+    
+    // Quick regex to check if they mentioned a location (you can expand this list)
+    // Or ideally, pass the location from your frontend in req.body.location
+    const locationMatch = latestUserMessage.match(/in\s+([a-zA-Z\s]+)|for\s+([a-zA-Z\s]+)/i);
+    const location = req.body.location || (locationMatch ? (locationMatch[1] || locationMatch[2]).trim() : null);
+
+    if (location) {
+      try {
+        logger.info('Pre-fetching weather for prompt injection', { location });
+        const weatherAdvisory = await getConcreteAdvisory(location, null);
+        
+        if (weatherAdvisory && weatherAdvisory.optimal_days) {
+          // Convert the real weather data into a text string for Claude to read
+          injectedWeatherContext = `\n\n[SYSTEM NOTE: The real-time weather data for ${location} this week is as follows. Use THIS EXACT DATA if the user asks for a pouring schedule or temperatures: ${JSON.stringify(weatherAdvisory.optimal_days)}]`;
+          
+          // Secretly append it to the last user message so Claude sees it
+          messages[messages.length - 1].content += injectedWeatherContext;
+        }
+      } catch (wErr) {
+        logger.warn('Failed to pre-fetch weather', { error: wErr.message });
+      }
+    }
+    // 🟢 END PRE-FETCH BLOCK
+
+    // Now call Claude. It will read the real weather data we just sneaked into the prompt!
     const { content, thinkingTimeMs } = await getAIResponse(
       messages,
       req.body.code_standard || chat.code_standard || 'EN206'
@@ -375,24 +403,12 @@ router.post('/:chat_id/ai-response', async (req, res) => {
     // Parse the response from Claude
     const parsedDesign = parseMixDesignResponse(content);
 
-    // Fetch Weather Advisory based on chat text
-    let weatherAdvisory = null;
-    
-    // Check if the parser found a location in Claude's response
-    if (parsedDesign.location) {
-      try {
-        logger.info('Fetching weather for chat location', { location: parsedDesign.location });
-        weatherAdvisory = await getConcreteAdvisory(parsedDesign.location, parsedDesign.materials);
-      } catch (weatherErr) {
-        logger.warn('Failed to fetch weather in chat', { error: weatherErr.message });
-        // Don't fail the whole chat if the weather API timeouts
-      }
-    }
+    // Save the AI's chat message (Note: We save the ORIGINAL content, not our secret system note)
+    const cleanContent = content.replace(/\[SYSTEM NOTE:.*?\]/g, ''); 
 
-    // Save the AI's chat message
     const { data: aiMsg } = await supabase
       .from('messages')
-      .insert({ id: uuidv4(), chat_id: chat.id, role: 'assistant', content })
+      .insert({ id: uuidv4(), chat_id: chat.id, role: 'assistant', content: cleanContent })
       .select()
       .single();
 
@@ -403,7 +419,6 @@ router.post('/:chat_id/ai-response', async (req, res) => {
     if (Object.keys(parsedDesign.materials).length > 0) {
       newDesignId = uuidv4(); 
       
-      // ✨ FIX 2: Provide 'justification' to satisfy the DB constraint and catch errors
       const { error: designError } = await supabase
         .from('designs')
         .insert({
@@ -412,21 +427,19 @@ router.post('/:chat_id/ai-response', async (req, res) => {
           chat_id: chat.id,
           mix_design: { ...parsedDesign.materials, ...parsedDesign.ratios },
           compliance: { code: chat.code_standard || 'EN206' },
-          justification: {}, // <--- Satisfies the NOT NULL constraint!
-          input_params: { code_standard: chat.code_standard || 'EN206' }
+          justification: {},
+          input_params: { code_standard: chat.code_standard || 'EN206', location: parsedDesign.location }
         });
 
-      // Catch and log any Supabase rejections to stop silent failures
       if (designError) {
-        logger.error('Failed to save design to DB:', { error: designError.message, details: designError.details });
-        newDesignId = null; // Nullify so the frontend doesn't try to fetch a broken PDF
+        logger.error('Failed to save design to DB:', { error: designError.message });
+        newDesignId = null; 
       }
     }
 
     await supabase.from('chats').update({ updated_at: new Date().toISOString() }).eq('id', chat.id);
 
-    // Return the newDesignId to the frontend
-    return created(res, { ...aiMsg, status: 'delivered', design: parsedDesign, design_id: newDesignId, weather_advisory: weatherAdvisory  });
+    return created(res, { ...aiMsg, status: 'delivered', design: parsedDesign, design_id: newDesignId });
   } catch (err) {
     logger.error('AI response error', { error: err.message });
     return res.status(503).json({ success: false, error: { code: 'AI_UNAVAILABLE', message: err.message } });

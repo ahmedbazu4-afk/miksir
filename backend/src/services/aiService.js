@@ -42,6 +42,7 @@ In this section, provide:
 CRITICAL: If the user mentions a project location or city in their message, you MUST output a line exactly like this at the bottom of your response:
 Location: [City Name]
 If no location is mentioned, do not include this line.
+If the user asks for a pouring schedule, weather conditions, or slump loss predictions, check if real-time weather data was provided in a [SYSTEM NOTE] at the end of their message. If the data is there, USE IT to generate an accurate daily schedule and slump loss warning. Do not say it is outside your scope if you have the data
 
 Include W/C Ratio and Air Content.`;
 
