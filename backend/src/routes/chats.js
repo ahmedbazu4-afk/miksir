@@ -367,34 +367,36 @@ router.post('/:chat_id/ai-response', async (req, res) => {
     }
 
     // 🟢 NEW: PRE-FETCH WEATHER BEFORE CALLING CLAUDE
-    // Grab the latest user message
-    const latestUserMessage = messages[messages.length - 1].content;
-    let injectedWeatherContext = "";
-    
-    // Improved Regex: Grabs only the 1 or 2 words immediately following in/for/at
-    const locationMatch = latestUserMessage.match(/(?:in|for|at)\s+([a-zA-ZçğıöşüÇĞIÖŞÜ]+(?:\s[a-zA-ZçğıöşüÇĞIÖŞÜ]+)?)/i);
-    
-    // Clean up the extracted location (e.g. remove words like "this" if it grabbed "Kayseri this")
-    let rawLocation = req.body.location || (locationMatch ? locationMatch[1].trim() : null);
-    let location = rawLocation ? rawLocation.replace(/\b(this|the|a|an|with)\b/gi, '').trim() : null;
+      const latestUserMessage = messages[messages.length - 1].content;
+      let injectedWeatherContext = "";
+      
+      const locationMatch = latestUserMessage.match(/(?:in|for|at)\s+([a-zA-ZçğıöşüÇĞIÖŞÜ]+(?:\s[a-zA-ZçğıöşüÇĞIÖŞÜ]+)?)/i);
+      let rawLocation = req.body.location || (locationMatch ? locationMatch[1].trim() : null);
+      let location = rawLocation ? rawLocation.replace(/\b(this|the|a|an|with)\b/gi, '').trim() : null;
 
-    if (location) {
-      try {
-        logger.info('Pre-fetching weather for prompt injection', { location });
-        const weatherAdvisory = await getConcreteAdvisory(location, null);
-        
-        if (weatherAdvisory && weatherAdvisory.optimal_days) {
-          // Convert the real weather data into a text string for Claude to read
-          injectedWeatherContext = `\n\n[SYSTEM NOTE: The real-time weather data for ${location} this week is as follows. Use THIS EXACT DATA if the user asks for a pouring schedule or temperatures: ${JSON.stringify(weatherAdvisory.optimal_days)}]`;
+      if (location) {
+        try {
+          logger.info('Pre-fetching weather for prompt injection', { location });
+          const weatherAdvisory = await getConcreteAdvisory(location, null);
           
-          // Secretly append it to the last user message so Claude sees it
-          messages[messages.length - 1].content += injectedWeatherContext;
+          // ✨ NEW: Log the keys to see exactly what the weather service returned
+          logger.info('Weather Payload Check', { 
+            hasAdvisory: !!weatherAdvisory,
+            keys: weatherAdvisory ? Object.keys(weatherAdvisory) : []
+          });
+
+          // ✨ NEW: Removed the strict .optimal_days check, and wrapped in XML
+          if (weatherAdvisory) {
+            injectedWeatherContext = `\n\n<real_time_weather>\nLocation: ${location}\nData: ${JSON.stringify(weatherAdvisory)}\n</real_time_weather>\n\nCRITICAL SYSTEM INSTRUCTION: Real-time weather data is provided above. You MUST use this data to generate the schedule. Do NOT say "No real-time weather feed was attached".`;
+            
+            messages[messages.length - 1].content += injectedWeatherContext;
+            logger.info('✅ Weather successfully injected into Claude prompt!');
+          }
+        } catch (wErr) {
+          logger.warn('Failed to pre-fetch weather', { error: wErr.message });
         }
-      } catch (wErr) {
-        logger.warn('Failed to pre-fetch weather', { error: wErr.message });
       }
-    }
-    // 🟢 END PRE-FETCH BLOCK
+      // 🟢 END PRE-FETCH BLOCK
 
     // Now call Claude. It will read the real weather data we just sneaked into the prompt!
     const { content, thinkingTimeMs } = await getAIResponse(
