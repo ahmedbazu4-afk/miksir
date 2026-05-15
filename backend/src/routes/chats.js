@@ -6,6 +6,7 @@ const { authenticate } = require('../middleware/auth');
 const { validate, createChatSchema, updateChatSchema, postMessageSchema } = require('../middleware/validation');
 const { success, created, serverError, notFound, forbidden } = require('../utils/response');
 const { getAIResponse, streamAIResponse } = require('../services/aiService');
+const { getConcreteAdvisory } = require('../services/weatherService');
 const logger = require('../utils/logger');
 
 router.use(authenticate);
@@ -374,6 +375,20 @@ router.post('/:chat_id/ai-response', async (req, res) => {
     // Parse the response from Claude
     const parsedDesign = parseMixDesignResponse(content);
 
+    // Fetch Weather Advisory based on chat text
+    let weatherAdvisory = null;
+    
+    // Check if the parser found a location in Claude's response
+    if (parsedDesign.location) {
+      try {
+        logger.info('Fetching weather for chat location', { location: parsedDesign.location });
+        weatherAdvisory = await getConcreteAdvisory(parsedDesign.location, parsedDesign.materials);
+      } catch (weatherErr) {
+        logger.warn('Failed to fetch weather in chat', { error: weatherErr.message });
+        // Don't fail the whole chat if the weather API timeouts
+      }
+    }
+
     // Save the AI's chat message
     const { data: aiMsg } = await supabase
       .from('messages')
@@ -411,7 +426,7 @@ router.post('/:chat_id/ai-response', async (req, res) => {
     await supabase.from('chats').update({ updated_at: new Date().toISOString() }).eq('id', chat.id);
 
     // Return the newDesignId to the frontend
-    return created(res, { ...aiMsg, status: 'delivered', design: parsedDesign, design_id: newDesignId });
+    return created(res, { ...aiMsg, status: 'delivered', design: parsedDesign, design_id: newDesignId, weather_advisory: weatherAdvisory  });
   } catch (err) {
     logger.error('AI response error', { error: err.message });
     return res.status(503).json({ success: false, error: { code: 'AI_UNAVAILABLE', message: err.message } });

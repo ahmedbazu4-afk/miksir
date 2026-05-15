@@ -17,7 +17,7 @@ const generateMixDesignPDF = (design, options = {}) => {
     try {
       const doc = new PDFDocument({ 
         size: 'A4', 
-        margin: 50,
+        margins: { top: 50, left: 50, right: 50, bottom: 20 },
         bufferPages: true,
         info: {
           Title: `Miksir Mix Design Report`,

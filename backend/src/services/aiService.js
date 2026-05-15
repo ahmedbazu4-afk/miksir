@@ -39,6 +39,9 @@ CRITICAL: At the very end of your response, ALWAYS include a section titled "###
 In this section, provide:
 - A "Confidence Score" (e.g., 95%) based on how standard the request is.
 - A brief comparative context (e.g., "This W/C ratio of 0.45 is strictly below the ACI 211 maximum of 0.50 for severe exposure, ensuring long-term durability.
+CRITICAL: If the user mentions a project location or city in their message, you MUST output a line exactly like this at the bottom of your response:
+Location: [City Name]
+If no location is mentioned, do not include this line.
 
 Include W/C Ratio and Air Content.`;
 

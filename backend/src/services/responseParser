@@ -6,7 +6,8 @@ function parseMixDesignResponse(text) {
     format: 'markdown',
     materials: {},
     ratios: {},
-    clarifications: []
+    clarifications: [],
+    location: null // 🟢 Added to hold the extracted location
   };
 
   // 1. Extract data from Markdown Tables
@@ -71,6 +72,13 @@ function parseMixDesignResponse(text) {
       (design.materials.water || 0) + 
       (design.materials.fine_aggregate || 0) + 
       (design.materials.coarse_aggregate || 0);
+  }
+
+  // 4. 🟢 Extract Location from Claude's response
+  const locationMatch = text.match(/Location:\s*(.+)/i);
+  if (locationMatch) {
+    // Trim spaces and remove any accidental markdown formatting or trailing periods
+    design.location = locationMatch[1].trim().replace(/\.$/, '').replace(/[*`~]/g, '');
   }
 
   return design;
