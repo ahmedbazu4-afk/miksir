@@ -68,7 +68,8 @@ async function getAIResponse(messages, codeStandard = 'EN206') {  // ← ADD PAR
       },
       "location": "City Name if mentioned, otherwise null"
     }
-    </pdf_data>`;
+    </pdf_data>`
+    "Begin your conversational markdown response here, AFTER the tags" ;
 
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',

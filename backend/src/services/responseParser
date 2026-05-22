@@ -1,96 +1,36 @@
 /**
- * Extract mix design data from AI's text response by slicing the string in two
+ * Extract mix design data from AI's text response using XML tags (Handles JSON at the TOP)
  */
 function parseMixDesignResponse(text) {
-  let jsonString = null;
-  let cleanText = text;
-
-  // 1. THE "CHOP IN HALF" METHOD
-  // Find the exact location of the unique JSON key
-  const mixDesignIdx = cleanText.indexOf('"mix_design"');
+  const startTag = '<pdf_data>';
+  const endTag = '</pdf_data>';
   
-  if (mixDesignIdx !== -1) {
-    // Find the opening curly bracket just before "mix_design"
-    const startBraceIdx = cleanText.lastIndexOf('{', mixDesignIdx);
+  const startIdx = text.toLowerCase().indexOf(startTag);
+  const endIdx = text.toLowerCase().indexOf(endTag);
+
+  if (startIdx === -1 || endIdx === -1) {
+    throw new Error('PDF Data tags missing from AI response');
+  }
+
+  const jsonString = text.substring(startIdx + startTag.length, endIdx).trim();
+  
+  try {
+    const parsedData = JSON.parse(jsonString);
     
-    if (startBraceIdx !== -1) {
-      // 🟢 Top Half: Everything BEFORE the bracket goes to the UI
-      const topHalf = cleanText.substring(0, startBraceIdx);
-      
-      // 🔵 Bottom Half: Everything AFTER the bracket is our JSON data
-      let bottomHalf = cleanText.substring(startBraceIdx);
+    // Validate that we actually got data
+    if (!parsedData.mix_design) throw new Error('Incomplete JSON data');
 
-      // Clean up the UI text (remove trailing tags or backticks)
-      cleanText = topHalf
-        .replace(/<pdf_data>/gi, '')
-        .replace(/```(?:json)?\s*$/i, '')
-        .trim();
-
-      // Clean up the JSON string (remove closing tags or backticks)
-      bottomHalf = bottomHalf
-        .replace(/<\/pdf_data>/gi, '')
-        .replace(/```/gi, '')
-        .trim();
-        
-      // Ensure the JSON string cleanly ends at the final bracket
-      const endBraceIdx = bottomHalf.lastIndexOf('}');
-      if (endBraceIdx !== -1) {
-        jsonString = bottomHalf.substring(0, endBraceIdx + 1);
-      }
-    }
+    return {
+      clean_text: text.replace(text.substring(startIdx, endIdx + endTag.length), '').trim(),
+      mix_design: parsedData.mix_design,
+      compliance: parsedData.compliance,
+      qa_notes: parsedData.qa_notes,
+      field_tips: parsedData.field_tips,
+      justification: parsedData.justification,
+      location: parsedData.location
+    };
+  } catch (err) {
+    // THROWING here is key - it stops the PDF generation from happening with bad data
+    throw new Error('Failed to parse AI JSON: ' + err.message);
   }
-
-  // Safely parse the extracted JSON
-  let parsedData = {};
-  if (jsonString) {
-    try {
-      parsedData = JSON.parse(jsonString);
-    } catch (err) {
-      console.error('Failed to parse AI JSON block', { error: err.message });
-    }
-  }
-
-  // Extract the location safely if it wasn't in the JSON
-  let extractedLocation = parsedData.location || null;
-  if (!extractedLocation) {
-    const locIndex = cleanText.toLowerCase().indexOf('location:');
-    if (locIndex !== -1) {
-       const endOfLine = cleanText.indexOf('\n', locIndex);
-       extractedLocation = cleanText.substring(locIndex + 9, endOfLine !== -1 ? endOfLine : cleanText.length).trim();
-       extractedLocation = extractedLocation.replace(/\.$/, '').replace(/[*`~]/g, '').split('|')[0].trim();
-    }
-  }
-
-  const mix_design = parsedData.mix_design || {};
-
-  return {
-    // 🟢 THIS GOES TO THE USER CHAT UI
-    clean_text: cleanText,
-    format: jsonString ? 'json_extracted' : 'fallback_regex',
-
-    // 🔵 THIS GOES TO YOUR PDF SERVICE
-    location: extractedLocation,
-    mix_design: mix_design,
-    compliance: parsedData.compliance || { code: "Unknown", checks: [] },
-    qa_notes: parsedData.qa_notes || null,
-    field_tips: parsedData.field_tips || [],
-    justification: parsedData.justification || {},
-
-    // Old structure for backwards compatibility
-    materials: {
-      cement: mix_design.cement,
-      water: mix_design.water,
-      fine_aggregate: mix_design.fine_aggregate,
-      coarse_aggregate: mix_design.coarse_aggregate,
-      ...(mix_design.admixtures || {})
-    },
-    ratios: {
-      w_c_ratio: mix_design.w_c_ratio,
-      target_mean_strength: mix_design.target_mean_strength,
-      air_content: mix_design.air_content
-    },
-    clarifications: []
-  };
 }
-
-module.exports = { parseMixDesignResponse };
