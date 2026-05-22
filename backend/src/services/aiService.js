@@ -1,5 +1,6 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
+const { parseMixDesignResponse } = require('./responseParser');
 
 /**
  * Get a response from Claude using the Anthropic API
@@ -91,12 +92,20 @@ async function getAIResponse(messages, codeStandard = 'EN206') {  // ← ADD PAR
       throw new Error('Claude returned empty response');
     }
 
+    // 🟢 RUN THE PARSER HERE
+    const parsedData = parseMixDesignResponse(content);
+
     logger.info('✅ Claude API success', {
       responseLength: content.length,
       thinkingTimeMs
     });
 
-    return { content, thinkingTimeMs };
+    // 🟢 RETURN THE CLEAN TEXT AND THE PDF DATA SEPARATELY
+    return { 
+      content: parsedData.clean_text,  // The UI and Database get the clean text
+      pdfData: parsedData,             // The PDF service gets the extracted JSON
+      thinkingTimeMs 
+    };
   } catch (err) {
     logger.error('❌ Claude API error', {
       error: err.message,

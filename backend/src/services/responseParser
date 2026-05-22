@@ -1,31 +1,46 @@
 /**
- * Extract mix design data from AI's text response using crash-proof string indexing
+ * Extract mix design data from AI's text response by slicing the string in two
  */
 function parseMixDesignResponse(text) {
   let jsonString = null;
-  let cleanText = text; 
+  let cleanText = text;
 
-  // 1. BULLETPROOF EXTRACTION: Find the first '{' and the last '}'
-  const firstBrace = text.indexOf('{');
-  const lastBrace = text.lastIndexOf('}');
+  // 1. THE "CHOP IN HALF" METHOD
+  // Find the exact location of the unique JSON key
+  const mixDesignIdx = cleanText.indexOf('"mix_design"');
   
-  if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
-    const potentialJson = text.substring(firstBrace, lastBrace + 1);
+  if (mixDesignIdx !== -1) {
+    // Find the opening curly bracket just before "mix_design"
+    const startBraceIdx = cleanText.lastIndexOf('{', mixDesignIdx);
     
-    // 2. Verify it's actually our mix design JSON
-    if (potentialJson.includes('"mix_design"')) {
-      jsonString = potentialJson;
+    if (startBraceIdx !== -1) {
+      // 🟢 Top Half: Everything BEFORE the bracket goes to the UI
+      const topHalf = cleanText.substring(0, startBraceIdx);
       
-      // 3. Remove the JSON from the UI text
-      cleanText = text.replace(potentialJson, '').trim();
-      
-      // 4. Clean up any leftover markdown tags or XML tags from the UI text
-      cleanText = cleanText.replace(/<pdf_data>/gi, '').replace(/<\/pdf_data>/gi, '');
-      cleanText = cleanText.replace(/```json/gi, '').replace(/```/gi, '').trim();
+      // 🔵 Bottom Half: Everything AFTER the bracket is our JSON data
+      let bottomHalf = cleanText.substring(startBraceIdx);
+
+      // Clean up the UI text (remove trailing tags or backticks)
+      cleanText = topHalf
+        .replace(/<pdf_data>/gi, '')
+        .replace(/```(?:json)?\s*$/i, '')
+        .trim();
+
+      // Clean up the JSON string (remove closing tags or backticks)
+      bottomHalf = bottomHalf
+        .replace(/<\/pdf_data>/gi, '')
+        .replace(/```/gi, '')
+        .trim();
+        
+      // Ensure the JSON string cleanly ends at the final bracket
+      const endBraceIdx = bottomHalf.lastIndexOf('}');
+      if (endBraceIdx !== -1) {
+        jsonString = bottomHalf.substring(0, endBraceIdx + 1);
+      }
     }
   }
 
-  // Safely parse the JSON
+  // Safely parse the extracted JSON
   let parsedData = {};
   if (jsonString) {
     try {
@@ -35,14 +50,14 @@ function parseMixDesignResponse(text) {
     }
   }
 
-  // Extract the location safely
+  // Extract the location safely if it wasn't in the JSON
   let extractedLocation = parsedData.location || null;
   if (!extractedLocation) {
     const locIndex = cleanText.toLowerCase().indexOf('location:');
     if (locIndex !== -1) {
        const endOfLine = cleanText.indexOf('\n', locIndex);
        extractedLocation = cleanText.substring(locIndex + 9, endOfLine !== -1 ? endOfLine : cleanText.length).trim();
-       extractedLocation = extractedLocation.replace(/\.$/, '').replace(/[*~]/g, '').split('|')[0].trim();
+       extractedLocation = extractedLocation.replace(/\.$/, '').replace(/[*`~]/g, '').split('|')[0].trim();
     }
   }
 
