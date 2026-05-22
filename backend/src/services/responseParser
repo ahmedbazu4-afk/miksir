@@ -9,26 +9,42 @@ function parseMixDesignResponse(text) {
   const tagMatch = text.match(/<pdf_data>([\s\S]*?)<\/pdf_data>/i);
   
   // 2. Markdown Case: AI wrapped it in ```json ... ```
-  // Looks specifically for the "location" key to bypass nested bracket issues
-  const mdMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?"mix_design"[\s\S]*?"location"\s*:\s*[^}]+\})\s*```/i);
+  const mdMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?"mix_design"[\s\S]*?\})\s*
+```/i);
 
-  // 3. Raw Case: The JSON is just sitting in the text
-  // Removed the $ anchor at the end so it works even if Claude adds chat text after the JSON
-  const rawMatch = text.match(/(\{[\s\S]*?"mix_design"[\s\S]*?"location"\s*:\s*[^}]+\})/i);
-
-  // Extract the JSON and strip the ENTIRE block from the text the user sees
   if (tagMatch) {
     jsonString = tagMatch[1];
     cleanText = text.replace(tagMatch[0], '').trim();
   } else if (mdMatch) {
     jsonString = mdMatch[1];
     cleanText = text.replace(mdMatch[0], '').trim();
-  } else if (rawMatch) {
-    jsonString = rawMatch[1];
-    cleanText = text.replace(rawMatch[0], '').trim();
+  } else {
+    // 3. BULLETPROOF RAW JSON EXTRACTOR:
+    // Finds the very first '{' and the very last '}' in the AI's response
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    
+    if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
+      const potentialJson = text.substring(firstBrace, lastBrace + 1);
+      
+      // Make sure it's actually our mix design JSON
+      if (potentialJson.includes('"mix_design"')) {
+        try {
+          // Verify it parses perfectly
+          JSON.parse(potentialJson);
+          jsonString = potentialJson;
+          
+          // Completely remove the JSON block from the text the user sees
+          cleanText = text.replace(potentialJson, '').trim();
+        } catch (err) {
+          // If JSON parse fails, it skips stripping to avoid deleting chat text
+          console.error('JSON Extraction fallback failed:', err.message);
+        }
+      }
+    }
   }
 
-  // Strip rogue markdown backticks if Claude put them inside the <pdf_data> tags
+  // Strip rogue markdown backticks if they leaked in
   if (jsonString) {
     jsonString = jsonString.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   }
@@ -39,7 +55,7 @@ function parseMixDesignResponse(text) {
     try {
       parsedData = JSON.parse(jsonString);
     } catch (err) {
-      console.error('Failed to parse AI JSON block', { error: err.message, snippet: jsonString.substring(0, 50) });
+      console.error('Failed to parse AI JSON block', { error: err.message });
     }
   }
 
