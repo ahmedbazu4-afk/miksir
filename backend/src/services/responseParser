@@ -34,3 +34,4 @@ function parseMixDesignResponse(text) {
     throw new Error('Failed to parse AI JSON: ' + err.message);
   }
 }
+module.exports = { parseMixDesignResponse };
