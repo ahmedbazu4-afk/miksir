@@ -14,6 +14,11 @@ async function getAIResponse(messages, codeStandard = 'EN206') {  // ← ADD PAR
       content: msg.content
     }));
 
+    const lastMsg = formattedMessages[formattedMessages.length - 1];
+    if (lastMsg && lastMsg.role === 'user') {
+      lastMsg.content += '\n\nCRITICAL SYSTEM REQUIREMENT: You must end your response with the <pdf_data> JSON block containing the mix_design and compliance data. Do not forget this.';
+    }
+
     const startTime = Date.now();
 
     logger.info('🤖 Calling Claude API', { messageCount: formattedMessages.length, codeStandard });
