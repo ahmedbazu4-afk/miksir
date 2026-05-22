@@ -1,67 +1,57 @@
 /**
- * Extract mix design data from AI's text response and remove the JSON from the text
+ * Extract mix design data from AI's text response and safely strip the JSON from the UI text
  */
 function parseMixDesignResponse(text) {
   let jsonString = null;
-  let cleanText = text; // This will hold the text without the JSON block
+  let cleanText = text; 
 
-  // 1. First, try to find the <pdf_data> tags
+  // 1. Ideal Case: It's wrapped in <pdf_data> tags
   const tagMatch = text.match(/<pdf_data>([\s\S]*?)<\/pdf_data>/i);
-  if (tagMatch && tagMatch[1]) {
+  
+  // 2. Markdown Case: The AI wrapped it in 
+```json { ... } ```
+  // FIXED: Removed the accidental line break that causes a Syntax Error
+  const mdMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?"mix_design"[\s\S]*?\})\s*
+```/i);
+  
+  // 3. Raw Case: The JSON is just sitting at the end of the text
+  const rawMatch = text.match(/(\{[\s\S]*?"mix_design"[\s\S]*?\})\s*$/i);
+
+  // Extract the JSON and strip the ENTIRE block from the text the user sees
+  if (tagMatch) {
     jsonString = tagMatch[1];
-    // Remove the tags and JSON from the text shown to the user
-    cleanText = text.replace(tagMatch[0], '').trim(); 
-  } else {
-    // 2. BACKUP: Look for a JSON object at the very end of the text.
-    // Updated regex to catch it if the AI only outputs {"location": "..."} OR the full mix design.
-    const bracketMatch = text.match(/(\{\s*(?:"mix_design"|"location")[\s\S]*\})\s*$/i);
-    if (bracketMatch && bracketMatch[1]) {
-      jsonString = bracketMatch[1];
-      // Remove the JSON block from the text shown to the user
-      cleanText = text.replace(bracketMatch[1], '').trim();
-    }
+    cleanText = text.replace(tagMatch[0], '').trim();
+  } else if (mdMatch) {
+    jsonString = mdMatch[1];
+    cleanText = text.replace(mdMatch[0], '').trim();
+  } else if (rawMatch) {
+    jsonString = rawMatch[1];
+    cleanText = text.replace(rawMatch[0], '').trim();
+  }
+
+  // CRITICAL FIX: If the AI puts ```json INSIDE the <pdf_data> tags, 
+  // we MUST strip those backticks out before calling JSON.parse()
+  if (jsonString) {
+    jsonString = jsonString.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   }
 
   // Safely parse the JSON if found
   let parsedData = {};
   if (jsonString) {
     try {
-      parsedData = JSON.parse(jsonString.trim());
+      parsedData = JSON.parse(jsonString);
     } catch (err) {
-      console.error('Failed to parse AI JSON block', { error: err.message });
+      console.error('Failed to parse AI JSON block', { error: err.message, snippet: jsonString.substring(0, 50) });
     }
   }
 
-  // Extract the location from the JSON (if it exists)
+  // Extract the location from the JSON or text
   let extractedLocation = parsedData.location || null;
-
-  // 3. FALLBACK: Regex logic just in case the JSON is completely missing
-  const design = { materials: {}, ratios: {} };
-  const tableRegex = /\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/g;
-  let match;
-  
-  while ((match = tableRegex.exec(cleanText)) !== null) {
-    const label = match[1].trim().toLowerCase();
-    const rawValue = match[2].trim().replace(/[*`~]/g, '');
-    const numMatch = rawValue.match(/[0-9.]+/);
-    const num = numMatch ? parseFloat(numMatch[0]) : null;
-
-    if (num !== null) {
-      if (label.includes('cement') && !label.includes('content') && !label.includes('ratio')) design.materials.cement = num;
-      else if (label.includes('water') && !label.includes('ratio')) design.materials.water = num;
-      else if (label.includes('fine aggregate') || label.includes('sand')) design.materials.fine_aggregate = (design.materials.fine_aggregate || 0) + num;
-      else if (label.includes('coarse aggregate') || label.includes('gravel')) design.materials.coarse_aggregate = (design.materials.coarse_aggregate || 0) + num;
-      else if (label.includes('w/c')) design.ratios.w_c_ratio = num;
-      else if (label.includes('air content')) design.ratios.air_content = num;
-    }
-  }
-
-  // Fallback location extraction if it wasn't in the JSON
   if (!extractedLocation) {
     const locationMatch = cleanText.match(/Location:\s*(.+)/i);
     if (locationMatch) {
+        // Added the backtick back into the replace regex to clean up markdown bold/italics
         extractedLocation = locationMatch[1].trim().replace(/\.$/, '').replace(/[*`~]/g, '');
-        // Clean up any trailing vertical bars from markdown tables
         extractedLocation = extractedLocation.split('|')[0].trim();
     }
   }
@@ -69,11 +59,11 @@ function parseMixDesignResponse(text) {
   const mix_design = parsedData.mix_design || {};
 
   return {
-    // Use this clean_text property to display the message to your users!
+    // 🟢 THIS GOES TO THE USER CHAT UI 
     clean_text: cleanText, 
     format: jsonString ? 'json_extracted' : 'fallback_regex',
     
-    // Core data
+    // 🔵 THIS GOES TO YOUR PDF SERVICE
     location: extractedLocation,
     mix_design: mix_design,
     compliance: parsedData.compliance || { code: "Unknown", checks: [] },
@@ -83,16 +73,16 @@ function parseMixDesignResponse(text) {
     
     // Old structure for backwards compatibility
     materials: {
-      cement: mix_design.cement || design.materials.cement,
-      water: mix_design.water || design.materials.water,
-      fine_aggregate: mix_design.fine_aggregate || design.materials.fine_aggregate,
-      coarse_aggregate: mix_design.coarse_aggregate || design.materials.coarse_aggregate,
+      cement: mix_design.cement,
+      water: mix_design.water,
+      fine_aggregate: mix_design.fine_aggregate,
+      coarse_aggregate: mix_design.coarse_aggregate,
       ...(mix_design.admixtures || {})
     },
     ratios: {
-      w_c_ratio: mix_design.w_c_ratio || design.ratios.w_c_ratio,
+      w_c_ratio: mix_design.w_c_ratio,
       target_mean_strength: mix_design.target_mean_strength,
-      air_content: mix_design.air_content || design.ratios.air_content
+      air_content: mix_design.air_content
     },
     clarifications: []
   };
