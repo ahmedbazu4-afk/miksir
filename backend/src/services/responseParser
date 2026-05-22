@@ -8,11 +8,8 @@ function parseMixDesignResponse(text) {
   // 1. Ideal Case: It's wrapped in <pdf_data> tags
   const tagMatch = text.match(/<pdf_data>([\s\S]*?)<\/pdf_data>/i);
   
-  // 2. Markdown Case: The AI wrapped it in 
-```json { ... } ```
-  // FIXED: Removed the accidental line break that causes a Syntax Error
-  const mdMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?"mix_design"[\s\S]*?\})\s*
-```/i);
+  // 2. Markdown Case: The AI wrapped it in ```json { ... } ```
+  const mdMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?"mix_design"[\s\S]*?\})\s*```/i);
   
   // 3. Raw Case: The JSON is just sitting at the end of the text
   const rawMatch = text.match(/(\{[\s\S]*?"mix_design"[\s\S]*?\})\s*$/i);
