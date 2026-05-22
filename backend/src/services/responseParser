@@ -1,55 +1,31 @@
 /**
- * Extract mix design data from AI's text response and safely strip the JSON from the UI text
+ * Extract mix design data from AI's text response using crash-proof string indexing
  */
 function parseMixDesignResponse(text) {
   let jsonString = null;
   let cleanText = text; 
 
-  // 1. Ideal Case: It's wrapped in <pdf_data> tags
-  const tagMatch = text.match(/<pdf_data>([\s\S]*?)<\/pdf_data>/i);
+  // 1. BULLETPROOF EXTRACTION: Find the first '{' and the last '}'
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
   
-  // 2. Markdown Case: AI wrapped it in ```json ... ```
-  const mdMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?"mix_design"[\s\S]*?\})\s*
-```/i);
-
-  if (tagMatch) {
-    jsonString = tagMatch[1];
-    cleanText = text.replace(tagMatch[0], '').trim();
-  } else if (mdMatch) {
-    jsonString = mdMatch[1];
-    cleanText = text.replace(mdMatch[0], '').trim();
-  } else {
-    // 3. BULLETPROOF RAW JSON EXTRACTOR:
-    // Finds the very first '{' and the very last '}' in the AI's response
-    const firstBrace = text.indexOf('{');
-    const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
+    const potentialJson = text.substring(firstBrace, lastBrace + 1);
     
-    if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
-      const potentialJson = text.substring(firstBrace, lastBrace + 1);
+    // 2. Verify it's actually our mix design JSON
+    if (potentialJson.includes('"mix_design"')) {
+      jsonString = potentialJson;
       
-      // Make sure it's actually our mix design JSON
-      if (potentialJson.includes('"mix_design"')) {
-        try {
-          // Verify it parses perfectly
-          JSON.parse(potentialJson);
-          jsonString = potentialJson;
-          
-          // Completely remove the JSON block from the text the user sees
-          cleanText = text.replace(potentialJson, '').trim();
-        } catch (err) {
-          // If JSON parse fails, it skips stripping to avoid deleting chat text
-          console.error('JSON Extraction fallback failed:', err.message);
-        }
-      }
+      // 3. Remove the JSON from the UI text
+      cleanText = text.replace(potentialJson, '').trim();
+      
+      // 4. Clean up any leftover markdown tags or XML tags from the UI text
+      cleanText = cleanText.replace(/<pdf_data>/gi, '').replace(/<\/pdf_data>/gi, '');
+      cleanText = cleanText.replace(/```json/gi, '').replace(/```/gi, '').trim();
     }
   }
 
-  // Strip rogue markdown backticks if they leaked in
-  if (jsonString) {
-    jsonString = jsonString.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  }
-
-  // Safely parse the JSON if found
+  // Safely parse the JSON
   let parsedData = {};
   if (jsonString) {
     try {
@@ -59,13 +35,14 @@ function parseMixDesignResponse(text) {
     }
   }
 
-  // Extract the location from the JSON or text
+  // Extract the location safely
   let extractedLocation = parsedData.location || null;
   if (!extractedLocation) {
-    const locationMatch = cleanText.match(/Location:\s*(.+)/i);
-    if (locationMatch) {
-        extractedLocation = locationMatch[1].trim().replace(/\.$/, '').replace(/[*`~]/g, '');
-        extractedLocation = extractedLocation.split('|')[0].trim();
+    const locIndex = cleanText.toLowerCase().indexOf('location:');
+    if (locIndex !== -1) {
+       const endOfLine = cleanText.indexOf('\n', locIndex);
+       extractedLocation = cleanText.substring(locIndex + 9, endOfLine !== -1 ? endOfLine : cleanText.length).trim();
+       extractedLocation = extractedLocation.replace(/\.$/, '').replace(/[*~]/g, '').split('|')[0].trim();
     }
   }
 
