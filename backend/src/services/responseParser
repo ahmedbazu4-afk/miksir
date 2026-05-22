@@ -1,61 +1,46 @@
 /**
- * Extract mix design data from Claude's text response
+ * Extract mix design data from AI's text response and remove the JSON from the text
  */
 function parseMixDesignResponse(text) {
   let jsonString = null;
+  let cleanText = text; // This will hold the text without the JSON block
 
   // 1. First, try to find the <pdf_data> tags
   const tagMatch = text.match(/<pdf_data>([\s\S]*?)<\/pdf_data>/i);
   if (tagMatch && tagMatch[1]) {
     jsonString = tagMatch[1];
+    // Remove the tags and JSON from the text shown to the user
+    cleanText = text.replace(tagMatch[0], '').trim(); 
   } else {
-    // 2. BACKUP: If Claude forgot the tags, look for a large JSON object at the very end of the text
-    const bracketMatch = text.match(/(\{\s*"mix_design"[\s\S]*\})\s*$/i);
+    // 2. BACKUP: Look for a JSON object at the very end of the text.
+    // Updated regex to catch it if the AI only outputs {"location": "..."} OR the full mix design.
+    const bracketMatch = text.match(/(\{\s*(?:"mix_design"|"location")[\s\S]*\})\s*$/i);
     if (bracketMatch && bracketMatch[1]) {
       jsonString = bracketMatch[1];
+      // Remove the JSON block from the text shown to the user
+      cleanText = text.replace(bracketMatch[1], '').trim();
     }
   }
 
+  // Safely parse the JSON if found
+  let parsedData = {};
   if (jsonString) {
     try {
-      const parsedData = JSON.parse(jsonString.trim());
-      const mix_design = parsedData.mix_design || {};
-      
-      return {
-        format: 'json_extracted',
-        mix_design: mix_design,
-        compliance: parsedData.compliance || {},
-        qa_notes: parsedData.qa_notes || null,
-        field_tips: parsedData.field_tips || null,
-        justification: parsedData.justification || {},
-        location: parsedData.location || null,
-        
-        // Old structure for backwards compatibility
-        materials: {
-          cement: mix_design.cement,
-          water: mix_design.water,
-          fine_aggregate: mix_design.fine_aggregate,
-          coarse_aggregate: mix_design.coarse_aggregate,
-          ...(mix_design.admixtures || {})
-        },
-        ratios: {
-          w_c_ratio: mix_design.w_c_ratio,
-          target_mean_strength: mix_design.target_mean_strength,
-          air_content: mix_design.air_content
-        },
-        clarifications: []
-      };
+      parsedData = JSON.parse(jsonString.trim());
     } catch (err) {
-      logger.error('Failed to parse AI JSON block', { error: err.message });
+      console.error('Failed to parse AI JSON block', { error: err.message });
     }
   }
 
-  // 2. FALLBACK: Old regex logic if Claude forgets the JSON block
-  const design = { format: 'markdown', materials: {}, ratios: {}, location: null };
+  // Extract the location from the JSON (if it exists)
+  let extractedLocation = parsedData.location || null;
+
+  // 3. FALLBACK: Regex logic just in case the JSON is completely missing
+  const design = { materials: {}, ratios: {} };
   const tableRegex = /\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/g;
   let match;
   
-  while ((match = tableRegex.exec(text)) !== null) {
+  while ((match = tableRegex.exec(cleanText)) !== null) {
     const label = match[1].trim().toLowerCase();
     const rawValue = match[2].trim().replace(/[*`~]/g, '');
     const numMatch = rawValue.match(/[0-9.]+/);
@@ -71,21 +56,44 @@ function parseMixDesignResponse(text) {
     }
   }
 
-  const locationMatch = text.match(/Location:\s*(.+)/i);
-  if (locationMatch) design.location = locationMatch[1].trim().replace(/\.$/, '').replace(/[*`~]/g, '');
+  // Fallback location extraction if it wasn't in the JSON
+  if (!extractedLocation) {
+    const locationMatch = cleanText.match(/Location:\s*(.+)/i);
+    if (locationMatch) {
+        extractedLocation = locationMatch[1].trim().replace(/\.$/, '').replace(/[*`~]/g, '');
+        // Clean up any trailing vertical bars from markdown tables
+        extractedLocation = extractedLocation.split('|')[0].trim();
+    }
+  }
+
+  const mix_design = parsedData.mix_design || {};
 
   return {
-    format: 'fallback_regex',
-    // New structure
-    mix_design: { ...design.materials, ...design.ratios },
-    compliance: { code: "Unknown", checks: [] },
-    qa_notes: null,
-    field_tips: [],
-    justification: {},
-    location: design.location,
-    // Old structure (Backwards compatibility)
-    materials: design.materials,
-    ratios: design.ratios,
+    // Use this clean_text property to display the message to your users!
+    clean_text: cleanText, 
+    format: jsonString ? 'json_extracted' : 'fallback_regex',
+    
+    // Core data
+    location: extractedLocation,
+    mix_design: mix_design,
+    compliance: parsedData.compliance || { code: "Unknown", checks: [] },
+    qa_notes: parsedData.qa_notes || null,
+    field_tips: parsedData.field_tips || [],
+    justification: parsedData.justification || {},
+    
+    // Old structure for backwards compatibility
+    materials: {
+      cement: mix_design.cement || design.materials.cement,
+      water: mix_design.water || design.materials.water,
+      fine_aggregate: mix_design.fine_aggregate || design.materials.fine_aggregate,
+      coarse_aggregate: mix_design.coarse_aggregate || design.materials.coarse_aggregate,
+      ...(mix_design.admixtures || {})
+    },
+    ratios: {
+      w_c_ratio: mix_design.w_c_ratio || design.ratios.w_c_ratio,
+      target_mean_strength: mix_design.target_mean_strength,
+      air_content: mix_design.air_content || design.ratios.air_content
+    },
     clarifications: []
   };
 }
