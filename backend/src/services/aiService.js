@@ -1,6 +1,5 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
-const { parseMixDesignResponse } = require('./responseParser');
 
 /**
  * Get a response from Claude using the Anthropic API
