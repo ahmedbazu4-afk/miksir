@@ -1,6 +1,6 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
-
+const { parseMixDesignResponse } = require('./responseParser');
 /**
  * Get a response from Claude using the Anthropic API
  */
@@ -34,7 +34,7 @@ async function getAIResponse(messages, codeStandard = 'EN206') {  // ← ADD PAR
     4. Suggest special considerations
 
     CRITICAL INSTRUCTIONS:
-    At the very end of your response, you MUST include a raw JSON block enclosed in <pdf_data> tags. This data will be used to generate a PDF report. Ensure all quantities are numbers. 
+    You must provide the JSON data first. 
     Follow this EXACT JSON structure inside the tags:
 
     <pdf_data>
@@ -68,13 +68,13 @@ async function getAIResponse(messages, codeStandard = 'EN206') {  // ← ADD PAR
       "location": "City Name if mentioned, otherwise null"
     }
     </pdf_data>
-    [After the tags, proceed with your conversational response...]
+    After the JSON tags, provide a brief technical summary. Keep total response under 1500 tokens to ensure speed.
     `;
 
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
       {
-        model: 'claude-sonnet-4-6', 
+        model: 'claude-haiku-4-5-20251001', 
         max_tokens: 4096,
         system: systemPrompt, 
         messages: formattedMessages
